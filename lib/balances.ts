@@ -54,6 +54,44 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
       const result = await rpc(chain.rpcUrl!, 'getBalance', [address])
       return { raw: BigInt(result.value), txCount: null }
     }
+    case 'iquidus': {
+      const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        cache: 'no-store',
+        redirect: 'error',
+      })
+      if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+      const text = (await res.text()).trim()
+      if (text.startsWith('{')) {
+        const err = JSON.parse(text)
+        if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
+        throw new Error(err.error ?? 'Explorer error')
+      }
+      return { raw: parseUnits(text, chain.decimals), txCount: null }
+    }
+  }
+}
+
+function parseUnits(value: string, decimals: number): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value)
+  if (!match) throw new Error('Unexpected balance format from explorer')
+  const [, sign, whole, fraction = ''] = match
+  const raw = BigInt(whole + fraction.padEnd(decimals, '0').slice(0, decimals))
+  return sign ? -raw : raw
+}
+
+async function getExplorerPrice(chain: Chain): Promise<number | null> {
+  try {
+    const res = await fetch(`${chain.explorerApiUrl}/ext/getcurrentprice`, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      next: { revalidate: 60 },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const price = Number(data.last_price_usd ?? data.last_price_usdt)
+    return Number.isFinite(price) && price > 0 ? price : null
+  } catch {
+    return null
   }
 }
 
@@ -87,9 +125,26 @@ export async function getBalances(
   wallets: Wallet[],
   chains: ChainMap = CHAIN_BY_ID,
 ): Promise<{ results: BalanceResult[]; prices: Record<string, number> }> {
-  const priceIds = [...new Set(wallets.map((w) => chains[w.chain].coingeckoId).filter((id): id is string => !!id))]
+  const walletChains = [...new Set(wallets.map((w) => chains[w.chain]))]
+  const explorerPriced = walletChains.filter((c) => c.kind === 'iquidus' && c.coingeckoId)
+  const priceIds = [
+    ...new Set(
+      walletChains
+        .filter((c) => c.kind !== 'iquidus')
+        .map((c) => c.coingeckoId)
+        .filter((id): id is string => !!id),
+    ),
+  ]
+  const loadPrices = async () => {
+    const [geckoPrices, explorerPrices] = await Promise.all([
+      getPrices(priceIds),
+      Promise.all(explorerPriced.map(async (c) => [c.coingeckoId!, await getExplorerPrice(c)] as const)),
+    ])
+    for (const [key, price] of explorerPrices) if (price !== null) geckoPrices[key] = price
+    return geckoPrices
+  }
   const [prices, results] = await Promise.all([
-    getPrices(priceIds),
+    loadPrices(),
     Promise.all(
       wallets.map(async (w): Promise<BalanceResult> => {
         const chain = chains[w.chain]

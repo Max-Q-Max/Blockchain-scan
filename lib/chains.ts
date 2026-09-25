@@ -1,4 +1,4 @@
-export type ChainKind = 'evm' | 'bitcoin' | 'solana'
+export type ChainKind = 'evm' | 'bitcoin' | 'solana' | 'iquidus'
 
 export type Chain = {
   id: string
@@ -6,7 +6,9 @@ export type Chain = {
   symbol: string
   decimals: number
   kind: ChainKind
+  /** Price key. For `iquidus` chains the USD price comes from the explorer itself, not CoinGecko. */
   coingeckoId?: string
+  explorerApiUrl?: string
   explorerName?: string
   explorerAddressUrl?: (address: string) => string
   rpcUrl?: string
@@ -56,6 +58,17 @@ export const CHAINS: Chain[] = [
     explorerName: 'Solscan',
     explorerAddressUrl: (a) => `https://solscan.io/account/${a}`,
     rpcUrl: 'https://api.mainnet-beta.solana.com',
+  },
+  {
+    id: 'ysbs',
+    name: 'Yerbas',
+    symbol: 'YERB',
+    decimals: 8,
+    kind: 'iquidus',
+    coingeckoId: 'yerbas',
+    explorerName: 'explorer.yerbas.org',
+    explorerApiUrl: 'https://explorer.yerbas.org',
+    explorerAddressUrl: (a) => `https://explorer.yerbas.org/address/${a}`,
   },
   {
     id: 'base',
@@ -233,6 +246,7 @@ export function decodeNetworks(value: string | undefined | null): CustomNetwork[
 const EVM_RE = /^0x[a-fA-F0-9]{40}$/
 const BTC_RE = /^(bc1[a-z0-9]{25,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/
 const SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+const YERBAS_RE = /^y[1-9A-HJ-NP-Za-km-z]{33}$/
 
 export function isValidAddress(chain: Chain, address: string): boolean {
   switch (chain.kind) {
@@ -242,6 +256,8 @@ export function isValidAddress(chain: Chain, address: string): boolean {
       return BTC_RE.test(address)
     case 'solana':
       return SOL_RE.test(address)
+    case 'iquidus':
+      return YERBAS_RE.test(address)
   }
 }
 
@@ -249,6 +265,7 @@ export function detectChain(address: string): string | null {
   const a = address.trim()
   if (EVM_RE.test(a)) return 'eth'
   if (BTC_RE.test(a)) return 'btc'
+  if (YERBAS_RE.test(a)) return 'ysbs'
   if (SOL_RE.test(a)) return 'sol'
   return null
 }

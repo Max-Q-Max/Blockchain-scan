@@ -68,7 +68,7 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
             id="address"
             value={address}
             onChange={(e) => handleAddressChange(e.target.value)}
-            placeholder="0x…, bc1…, or a Solana address"
+            placeholder="0x…, bc1…, y… (Yerbas), or a Solana address"
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(error)}
