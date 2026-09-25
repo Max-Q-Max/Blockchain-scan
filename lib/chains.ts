@@ -6,11 +6,23 @@ export type Chain = {
   symbol: string
   decimals: number
   kind: ChainKind
-  coingeckoId: string
-  explorerName: string
-  explorerAddressUrl: (address: string) => string
+  coingeckoId?: string
+  explorerName?: string
+  explorerAddressUrl?: (address: string) => string
   rpcUrl?: string
+  custom?: boolean
 }
+
+export type CustomNetwork = {
+  id: string
+  name: string
+  symbol: string
+  rpcUrl: string
+  explorerUrl?: string
+  coingeckoId?: string
+}
+
+export type ChainMap = Record<string, Chain>
 
 export const CHAINS: Chain[] = [
   {
@@ -91,7 +103,132 @@ export const CHAINS: Chain[] = [
   },
 ]
 
-export const CHAIN_BY_ID = Object.fromEntries(CHAINS.map((c) => [c.id, c])) as Record<string, Chain>
+export const CHAIN_BY_ID = Object.fromEntries(CHAINS.map((c) => [c.id, c])) as ChainMap
+
+export const PRESET_NETWORKS: CustomNetwork[] = [
+  {
+    id: 'op',
+    name: 'Optimism',
+    symbol: 'ETH',
+    rpcUrl: 'https://optimism-rpc.publicnode.com',
+    explorerUrl: 'https://optimistic.etherscan.io',
+    coingeckoId: 'ethereum',
+  },
+  {
+    id: 'avax',
+    name: 'Avalanche C-Chain',
+    symbol: 'AVAX',
+    rpcUrl: 'https://avalanche-c-chain-rpc.publicnode.com',
+    explorerUrl: 'https://snowtrace.io',
+    coingeckoId: 'avalanche-2',
+  },
+  {
+    id: 'gnosis',
+    name: 'Gnosis',
+    symbol: 'xDAI',
+    rpcUrl: 'https://gnosis-rpc.publicnode.com',
+    explorerUrl: 'https://gnosisscan.io',
+    coingeckoId: 'xdai',
+  },
+  {
+    id: 'linea',
+    name: 'Linea',
+    symbol: 'ETH',
+    rpcUrl: 'https://linea-rpc.publicnode.com',
+    explorerUrl: 'https://lineascan.build',
+    coingeckoId: 'ethereum',
+  },
+  {
+    id: 'scroll',
+    name: 'Scroll',
+    symbol: 'ETH',
+    rpcUrl: 'https://scroll-rpc.publicnode.com',
+    explorerUrl: 'https://scrollscan.com',
+    coingeckoId: 'ethereum',
+  },
+]
+
+export const MAX_CUSTOM_NETWORKS = 10
+
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+const BLOCKED_HOST_SUFFIXES = ['localhost', '.local', '.internal', '.lan', '.home.arpa']
+
+export function isSafePublicUrl(value: string): boolean {
+  if (value.length > 200) return false
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return false
+  const host = url.hostname.toLowerCase()
+  if (!host.includes('.') || IPV4_RE.test(host) || host.startsWith('[')) return false
+  return !BLOCKED_HOST_SUFFIXES.some((s) => host === s.replace(/^\./, '') || host.endsWith(s))
+}
+
+const ID_RE = /^[a-z0-9-]{1,16}$/
+const COINGECKO_RE = /^[a-z0-9-]{1,60}$/
+
+export function sanitizeNetwork(n: Partial<CustomNetwork>): CustomNetwork | null {
+  const id = n.id?.trim().toLowerCase() ?? ''
+  const name = n.name?.trim().slice(0, 32) ?? ''
+  const symbol = n.symbol?.trim().slice(0, 10) ?? ''
+  const rpcUrl = n.rpcUrl?.trim() ?? ''
+  const explorerUrl = n.explorerUrl?.trim().replace(/\/+$/, '') || undefined
+  const coingeckoId = n.coingeckoId?.trim().toLowerCase() || undefined
+  if (!ID_RE.test(id) || CHAIN_BY_ID[id] || !name || !symbol || !isSafePublicUrl(rpcUrl)) return null
+  if (explorerUrl && !isSafePublicUrl(explorerUrl)) return null
+  if (coingeckoId && !COINGECKO_RE.test(coingeckoId)) return null
+  return { id, name, symbol, rpcUrl, explorerUrl, coingeckoId }
+}
+
+export function slugifyNetworkId(name: string, taken: Set<string>): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 12) || 'net'
+  let id = base
+  for (let i = 2; taken.has(id) || CHAIN_BY_ID[id]; i++) id = `${base.slice(0, 12)}-${i}`
+  return id
+}
+
+export function networkToChain(n: CustomNetwork): Chain {
+  const explorerHost = n.explorerUrl ? new URL(n.explorerUrl).hostname.replace(/^www\./, '') : undefined
+  return {
+    id: n.id,
+    name: n.name,
+    symbol: n.symbol,
+    decimals: 18,
+    kind: 'evm',
+    coingeckoId: n.coingeckoId,
+    explorerName: explorerHost,
+    explorerAddressUrl: n.explorerUrl ? (a) => `${n.explorerUrl}/address/${a}` : undefined,
+    rpcUrl: n.rpcUrl,
+    custom: true,
+  }
+}
+
+export function buildChainMap(networks: CustomNetwork[]): ChainMap {
+  return { ...CHAIN_BY_ID, ...Object.fromEntries(networks.map((n) => [n.id, networkToChain(n)])) }
+}
+
+const NETWORK_FIELDS = ['id', 'name', 'symbol', 'rpcUrl', 'explorerUrl', 'coingeckoId'] as const
+
+export function encodeNetworks(networks: CustomNetwork[]): string {
+  return networks.map((n) => NETWORK_FIELDS.map((f) => encodeURIComponent(n[f] ?? '')).join('|')).join(',')
+}
+
+export function decodeNetworks(value: string | undefined | null): CustomNetwork[] {
+  if (!value) return []
+  const networks: CustomNetwork[] = []
+  const seen = new Set<string>()
+  for (const part of value.split(',')) {
+    const fields = part.split('|').map((f) => safeDecode(f, 200) ?? '')
+    const n = sanitizeNetwork(Object.fromEntries(NETWORK_FIELDS.map((f, i) => [f, fields[i]])))
+    if (!n || seen.has(n.id)) continue
+    seen.add(n.id)
+    networks.push(n)
+  }
+  return networks.slice(0, MAX_CUSTOM_NETWORKS)
+}
 
 const EVM_RE = /^0x[a-fA-F0-9]{40}$/
 const BTC_RE = /^(bc1[a-z0-9]{25,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/
@@ -139,15 +276,15 @@ export function encodeWallets(wallets: Wallet[]): string {
     .join(',')
 }
 
-export function decodeWallets(value: string | undefined | null): Wallet[] {
+export function decodeWallets(value: string | undefined | null, chains: ChainMap = CHAIN_BY_ID): Wallet[] {
   if (!value) return []
   const seen = new Set<string>()
   const wallets: Wallet[] = []
   for (const part of value.split(',')) {
     const [chain, address, label] = part.split(':')
-    const c = CHAIN_BY_ID[chain]
+    const c = chains[chain]
     if (!c || !address || !isValidAddress(c, address)) continue
-    const w: Wallet = { chain, address, label: label ? safeDecode(label) : undefined }
+    const w: Wallet = { chain, address, label: label ? safeDecode(label, 40) : undefined }
     if (seen.has(walletKey(w))) continue
     seen.add(walletKey(w))
     wallets.push(w)
@@ -155,9 +292,9 @@ export function decodeWallets(value: string | undefined | null): Wallet[] {
   return wallets.slice(0, 25)
 }
 
-function safeDecode(v: string) {
+function safeDecode(v: string, max: number) {
   try {
-    return decodeURIComponent(v).slice(0, 40)
+    return decodeURIComponent(v).slice(0, max)
   } catch {
     return undefined
   }

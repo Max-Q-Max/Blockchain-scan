@@ -1,5 +1,5 @@
 import 'server-only'
-import { CHAIN_BY_ID, type BalanceResult, type Chain, type Wallet } from '@/lib/chains'
+import { CHAIN_BY_ID, type BalanceResult, type Chain, type ChainMap, type Wallet } from '@/lib/chains'
 
 const TIMEOUT_MS = 10_000
 
@@ -9,6 +9,7 @@ async function fetchJson(url: string, init?: RequestInit) {
     headers: { 'content-type': 'application/json', accept: 'application/json', ...init?.headers },
     signal: AbortSignal.timeout(TIMEOUT_MS),
     cache: 'no-store',
+    redirect: 'error',
   })
   if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
   return res.json()
@@ -73,13 +74,25 @@ export async function getPrices(ids: string[]): Promise<Record<string, number>> 
   }
 }
 
-export async function getBalances(wallets: Wallet[]): Promise<{ results: BalanceResult[]; prices: Record<string, number> }> {
-  const priceIds = [...new Set(wallets.map((w) => CHAIN_BY_ID[w.chain].coingeckoId))]
+export async function verifyEvmRpc(rpcUrl: string): Promise<{ chainId: number; blockNumber: number }> {
+  const [chainId, blockNumber] = await Promise.all([
+    rpc(rpcUrl, 'eth_chainId', []),
+    rpc(rpcUrl, 'eth_blockNumber', []),
+  ])
+  if (typeof chainId !== 'string' || typeof blockNumber !== 'string') throw new Error('Not an EVM JSON-RPC endpoint')
+  return { chainId: Number(BigInt(chainId)), blockNumber: Number(BigInt(blockNumber)) }
+}
+
+export async function getBalances(
+  wallets: Wallet[],
+  chains: ChainMap = CHAIN_BY_ID,
+): Promise<{ results: BalanceResult[]; prices: Record<string, number> }> {
+  const priceIds = [...new Set(wallets.map((w) => chains[w.chain].coingeckoId).filter((id): id is string => !!id))]
   const [prices, results] = await Promise.all([
     getPrices(priceIds),
     Promise.all(
       wallets.map(async (w): Promise<BalanceResult> => {
-        const chain = CHAIN_BY_ID[w.chain]
+        const chain = chains[w.chain]
         try {
           const { raw, txCount } = await getRawBalance(chain, w.address)
           return { chain: w.chain, address: w.address, ok: true, raw: raw.toString(), balance: formatUnits(raw, chain.decimals), txCount }
@@ -96,7 +109,8 @@ export async function getBalances(wallets: Wallet[]): Promise<{ results: Balance
   ])
 
   for (const r of results) {
-    const price = prices[CHAIN_BY_ID[r.chain].coingeckoId]
+    const id = chains[r.chain].coingeckoId
+    const price = id ? prices[id] : undefined
     r.usd = r.ok && price !== undefined ? Number(r.balance) * price : null
   }
 
