@@ -3,19 +3,20 @@
 import { useState } from 'react'
 import { AlertTriangle, Check, Copy, ExternalLink, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { CHAIN_BY_ID, type BalanceResult, type Wallet } from '@/lib/chains'
+import type { BalanceResult, Chain, Wallet } from '@/lib/chains'
 import { formatBalance, formatUsd, shortenAddress } from '@/lib/format'
 
 export function WalletRow({
   wallet,
+  chain,
   result,
   onRemove,
 }: {
   wallet: Wallet
+  chain: Chain
   result?: BalanceResult
   onRemove: () => void
 }) {
-  const chain = CHAIN_BY_ID[wallet.chain]
   const [copied, setCopied] = useState(false)
 
   async function copy() {
@@ -78,18 +79,20 @@ export function WalletRow({
       </p>
 
       <div className="col-span-2 flex items-center justify-end gap-1 md:col-span-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          nativeButton={false}
-          render={
-            <a href={chain.explorerAddressUrl(wallet.address)} target="_blank" rel="noopener noreferrer" />
-          }
-          className="text-muted-foreground"
-        >
-          {chain.explorerName}
-          <ExternalLink aria-hidden="true" />
-        </Button>
+        {chain.explorerAddressUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            nativeButton={false}
+            render={
+              <a href={chain.explorerAddressUrl(wallet.address)} target="_blank" rel="noopener noreferrer" />
+            }
+            className="text-muted-foreground"
+          >
+            {chain.explorerName}
+            <ExternalLink aria-hidden="true" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"

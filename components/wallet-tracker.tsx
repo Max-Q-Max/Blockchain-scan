@@ -6,7 +6,15 @@ import { Link2, RefreshCw, Wallet as WalletIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddWalletForm } from '@/components/add-wallet-form'
 import { WalletRow } from '@/components/wallet-row'
-import { CHAIN_BY_ID, encodeWallets, walletKey, type BalanceResult, type Wallet } from '@/lib/chains'
+import {
+  buildChainMap,
+  encodeNetworks,
+  encodeWallets,
+  walletKey,
+  type BalanceResult,
+  type CustomNetwork,
+  type Wallet,
+} from '@/lib/chains'
 import { formatUsd } from '@/lib/format'
 
 type BalancesResponse = { results: BalanceResult[]; prices: Record<string, number>; fetchedAt: string }
@@ -25,20 +33,38 @@ async function fetcher(url: string): Promise<BalancesResponse> {
   return res.json()
 }
 
-export function WalletTracker({ initialWallets }: { initialWallets: Wallet[] }) {
+export function WalletTracker({
+  initialWallets,
+  initialNetworks,
+}: {
+  initialWallets: Wallet[]
+  initialNetworks: CustomNetwork[]
+}) {
   const [wallets, setWallets] = useState<Wallet[]>(initialWallets)
+  const [networks, setNetworks] = useState<CustomNetwork[]>(initialNetworks)
   const [linkCopied, setLinkCopied] = useState(false)
+  const chains = useMemo(() => buildChainMap(networks), [networks])
   const encoded = encodeWallets(wallets)
+  const encodedNetworks = encodeNetworks(networks)
 
   useEffect(() => {
     const url = new URL(window.location.href)
     if (encoded) url.searchParams.set('w', encoded)
     else url.searchParams.delete('w')
+    if (encodedNetworks) url.searchParams.set('n', encodedNetworks)
+    else url.searchParams.delete('n')
     window.history.replaceState(null, '', url)
-  }, [encoded])
+  }, [encoded, encodedNetworks])
+
+  function removeNetwork(id: string) {
+    setNetworks((prev) => prev.filter((n) => n.id !== id))
+    setWallets((prev) => prev.filter((w) => w.chain !== id))
+  }
 
   const { data, error, isValidating, mutate } = useSWR(
-    encoded ? `/api/balances?w=${encodeURIComponent(encoded)}` : null,
+    encoded
+      ? `/api/balances?w=${encodeURIComponent(encoded)}${encodedNetworks ? `&n=${encodeURIComponent(encodedNetworks)}` : ''}`
+      : null,
     fetcher,
     { keepPreviousData: true, refreshInterval: 60_000, revalidateOnFocus: false },
   )
@@ -71,7 +97,14 @@ export function WalletTracker({ initialWallets }: { initialWallets: Wallet[] }) 
             {`You're tracking the maximum of ${MAX_WALLETS} wallets. Remove one to add another.`}
           </p>
         ) : (
-          <AddWalletForm existing={existing} onAdd={(w) => setWallets((prev) => [...prev, w])} />
+          <AddWalletForm
+            chains={chains}
+            networks={networks}
+            existing={existing}
+            onAdd={(w) => setWallets((prev) => [...prev, w])}
+            onAddNetwork={(n) => setNetworks((prev) => [...prev, n])}
+            onRemoveNetwork={removeNetwork}
+          />
         )}
       </section>
 
@@ -132,6 +165,7 @@ export function WalletTracker({ initialWallets }: { initialWallets: Wallet[] }) 
               <WalletRow
                 key={walletKey(w)}
                 wallet={w}
+                chain={chains[w.chain]}
                 result={resultsByKey.get(walletKey(w))}
                 onRemove={() => setWallets((prev) => prev.filter((p) => walletKey(p) !== walletKey(w)))}
               />
@@ -144,7 +178,7 @@ export function WalletTracker({ initialWallets }: { initialWallets: Wallet[] }) 
         <p className="text-center font-mono text-xs text-muted-foreground">
           {Object.entries(data.prices)
             .map(([id, price]) => {
-              const symbol = Object.values(CHAIN_BY_ID).find((c) => c.coingeckoId === id)?.symbol ?? id
+              const symbol = Object.values(chains).find((c) => c.coingeckoId === id)?.symbol ?? id
               return `${symbol} ${formatUsd(price)}`
             })
             .join('  ·  ')}
