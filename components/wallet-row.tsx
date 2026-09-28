@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Check, Copy, ExternalLink, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bell, Check, Copy, ExternalLink, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AlertDialog } from '@/components/alert-dialog'
 import type { BalanceResult, Chain, Wallet } from '@/lib/chains'
 import { formatBalance, formatUsd, shortenAddress } from '@/lib/format'
 
