@@ -55,19 +55,12 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
       return { raw: BigInt(result.value), txCount: null }
     }
     case 'iquidus': {
-      // Raptoreum uses /api/getaddressbalance, while Yerbas uses /ext/getbalance
+      // Raptoreum uses /api/getaddressbalance, Yerbas uses /ext/getbalance
       if (chain.id === 'rtm') {
-        const res = await fetch(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}?json=true`, {
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          cache: 'no-store',
-          redirect: 'error',
-        })
-        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
-        const data = await res.json()
+        const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`)
         if (!data.success) throw new Error(data.error ?? 'Address not found')
         return { raw: parseUnits(data.balanceRTM.toString(), chain.decimals), txCount: null }
       } else {
-        // Yerbas and similar explorers
         const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
           signal: AbortSignal.timeout(TIMEOUT_MS),
           cache: 'no-store',
