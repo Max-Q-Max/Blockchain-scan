@@ -71,6 +71,17 @@ export const CHAINS: Chain[] = [
     explorerAddressUrl: (a) => `https://explorer.yerbas.org/address/${a}`,
   },
   {
+    id: 'rtm',
+    name: 'Raptoreum',
+    symbol: 'RTM',
+    decimals: 8,
+    kind: 'iquidus',
+    coingeckoId: 'raptoreum',
+    explorerName: 'explorer.raptoreum.com',
+    explorerApiUrl: 'https://explorer.raptoreum.com',
+    explorerAddressUrl: (a) => `https://explorer.raptoreum.com/address/${a}`,
+  },
+  {
     id: 'base',
     name: 'Base',
     symbol: 'ETH',
@@ -247,6 +258,7 @@ const EVM_RE = /^0x[a-fA-F0-9]{40}$/
 const BTC_RE = /^(bc1[a-z0-9]{25,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/
 const SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const YERBAS_RE = /^y[1-9A-HJ-NP-Za-km-z]{33}$/
+const RAPT_RE = /^R[1-9A-HJ-NP-Za-km-z]{32,44}$/
 
 export function isValidAddress(chain: Chain, address: string): boolean {
   switch (chain.kind) {
@@ -257,7 +269,7 @@ export function isValidAddress(chain: Chain, address: string): boolean {
     case 'solana':
       return SOL_RE.test(address)
     case 'iquidus':
-      return YERBAS_RE.test(address)
+      return chain.id === 'rtm' ? RAPT_RE.test(address) : YERBAS_RE.test(address)
   }
 }
 
@@ -265,6 +277,7 @@ export function detectChain(address: string): string | null {
   const a = address.trim()
   if (EVM_RE.test(a)) return 'eth'
   if (BTC_RE.test(a)) return 'btc'
+  if (RAPT_RE.test(a)) return 'rtm'
   if (YERBAS_RE.test(a)) return 'ysbs'
   if (SOL_RE.test(a)) return 'sol'
   return null
