@@ -5,7 +5,8 @@ import { AlertTriangle, Bell, Check, Copy, ExternalLink, Trash2 } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { AlertForm } from '@/components/alert-form'
 import type { BalanceResult, Chain, Wallet } from '@/lib/chains'
-import { formatBalance, formatUsd, shortenAddress, walletKey } from '@/lib/chains'
+import { walletKey } from '@/lib/chains'
+import { formatBalance, formatUsd, shortenAddress } from '@/lib/format'
 
 type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
 
