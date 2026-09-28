@@ -55,19 +55,33 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
       return { raw: BigInt(result.value), txCount: null }
     }
     case 'iquidus': {
-      const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        cache: 'no-store',
-        redirect: 'error',
-      })
-      if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
-      const text = (await res.text()).trim()
-      if (text.startsWith('{')) {
-        const err = JSON.parse(text)
-        if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
-        throw new Error(err.error ?? 'Explorer error')
+      // Raptoreum uses /api/getaddressbalance, while Yerbas uses /ext/getbalance
+      if (chain.id === 'rtm') {
+        const res = await fetch(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}?json=true`, {
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          cache: 'no-store',
+          redirect: 'error',
+        })
+        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+        const data = await res.json()
+        if (!data.success) throw new Error(data.error ?? 'Address not found')
+        return { raw: parseUnits(data.balanceRTM.toString(), chain.decimals), txCount: null }
+      } else {
+        // Yerbas and similar explorers
+        const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          cache: 'no-store',
+          redirect: 'error',
+        })
+        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+        const text = (await res.text()).trim()
+        if (text.startsWith('{')) {
+          const err = JSON.parse(text)
+          if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
+          throw new Error(err.error ?? 'Explorer error')
+        }
+        return { raw: parseUnits(text, chain.decimals), txCount: null }
       }
-      return { raw: parseUnits(text, chain.decimals), txCount: null }
     }
   }
 }
