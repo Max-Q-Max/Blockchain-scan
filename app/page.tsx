@@ -15,17 +15,17 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
           <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
           <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase">Ledgerline</span>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight text-balance md:text-4xl">Wallet balance checker</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-balance md:text-4xl">Verificador de saldo de billetera</h1>
         <p className="max-w-2xl text-muted-foreground text-pretty">
-          Live on-chain balances pulled directly from public explorers and RPC nodes. Supports{' '}
-          {CHAINS.map((c) => c.name).join(', ')} — plus any EVM network you add.
+          Saldos en cadena en vivo obtenidos directamente de exploradores públicos y nodos RPC. Admite{' '}
+          {CHAINS.map((c) => c.name).join(', ')} — además de cualquier red EVM que agregues.
         </p>
       </header>
 
       <WalletTracker initialWallets={initialWallets} initialNetworks={initialNetworks} />
 
       <footer className="mt-auto text-center text-xs text-muted-foreground">
-        Data from mempool.space, public RPC nodes, and CoinGecko. Your wallet list lives in the URL — nothing is stored.
+        Datos de mempool.space, nodos RPC públicos y CoinGecko. Tu lista de billeteras vive en la URL — nada se almacena.
       </footer>
     </main>
   )
