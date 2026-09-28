@@ -93,6 +93,12 @@ const T = {
   },
 }
 
+const LOCAL_STORAGE_KEYS = {
+  wallets: 'ledgerline-wallets',
+  networks: 'ledgerline-networks',
+  alerts: 'ledgerline-alerts',
+}
+
 export function WalletTracker({
   initialWallets,
   initialNetworks,
@@ -100,15 +106,39 @@ export function WalletTracker({
   initialWallets: Wallet[]
   initialNetworks: CustomNetwork[]
 }) {
-  const [wallets, setWallets] = useState<Wallet[]>(initialWallets)
-  const [networks, setNetworks] = useState<CustomNetwork[]>(initialNetworks)
+  const [wallets, setWallets] = useState<Wallet[]>(() => {
+    if (initialWallets.length > 0) return initialWallets
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.wallets)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
+  const [networks, setNetworks] = useState<CustomNetwork[]>(() => {
+    if (initialNetworks.length > 0) return initialNetworks
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.networks)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
   const [linkCopied, setLinkCopied] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [locale, setLocale] = useState<'es' | 'en'>('es')
   const [alerts, setAlerts] = useState<Alert[]>(() => {
     if (typeof window === 'undefined') return []
     try {
-      return JSON.parse(localStorage.getItem('ledgerline-alerts') || '[]')
+      return JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.alerts) || '[]')
     } catch {
       return []
     }
@@ -130,7 +160,19 @@ export function WalletTracker({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('ledgerline-alerts', JSON.stringify(alerts))
+      localStorage.setItem(LOCAL_STORAGE_KEYS.wallets, JSON.stringify(wallets))
+    }
+  }, [wallets])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.networks, JSON.stringify(networks))
+    }
+  }, [networks])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.alerts, JSON.stringify(alerts))
     }
   }, [alerts])
 
