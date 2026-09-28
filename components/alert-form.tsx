@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 
 type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
@@ -18,9 +18,9 @@ export function AlertForm({
   const [direction, setDirection] = useState<'above' | 'below'>('above')
   const [value, setValue] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!value || isNaN(Number(value))) return
+    if (!value || Number.isNaN(Number(value))) return
 
     onAdd({
       walletKey,
@@ -36,7 +36,7 @@ export function AlertForm({
     <form onSubmit={handleSubmit} className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Tipo:</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Tipo:</label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as 'usd' | 'pct')}
@@ -47,7 +47,7 @@ export function AlertForm({
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Condición:</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Condición:</label>
           <select
             value={direction}
             onChange={(e) => setDirection(e.target.value as 'above' | 'below')}
@@ -60,7 +60,7 @@ export function AlertForm({
       </div>
 
       <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1 block">Valor:</label>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">Valor:</label>
         <input
           type="number"
           value={value}
@@ -73,22 +73,10 @@ export function AlertForm({
       </div>
 
       <div className="flex gap-1 pt-1">
-        <Button
-          type="submit"
-          size="sm"
-          variant="default"
-          className="flex-1 text-xs"
-          disabled={!value || isNaN(Number(value))}
-        >
+        <Button type="submit" size="sm" variant="default" className="flex-1 text-xs" disabled={!value || Number.isNaN(Number(value))}>
           Crear
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="flex-1 text-xs"
-          onClick={onCancel}
-        >
+        <Button type="button" size="sm" variant="outline" className="flex-1 text-xs" onClick={onCancel}>
           Cancelar
         </Button>
       </div>

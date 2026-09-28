@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Download, Link2, RefreshCw, Wallet as WalletIcon, Globe, Bell, Trash2 } from 'lucide-react'
+import { Download, Link2, RefreshCw, Wallet as WalletIcon, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddWalletForm } from '@/components/add-wallet-form'
 import { WalletRow } from '@/components/wallet-row'
 import { formatUsd } from '@/lib/format'
-import { AlertDialog } from '@/components/alert-dialog'
 import {
   buildChainMap,
   encodeNetworks,
@@ -19,18 +18,19 @@ import {
 } from '@/lib/chains'
 
 type BalancesResponse = { results: BalanceResult[]; prices: Record<string, number>; fetchedAt: string }
+type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
 
 const MAX_WALLETS = 25
 
 const SAMPLE_WALLETS: Wallet[] = [
   { chain: 'eth', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', label: 'vitalik.eth' },
-  { chain: 'btc', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', label: 'Sample BTC wallet' },
-  { chain: 'sol', address: 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg', label: 'Sample SOL wallet' },
+  { chain: 'btc', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', label: 'Billetera BTC de ejemplo' },
+  { chain: 'sol', address: 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg', label: 'Billetera SOL de ejemplo' },
 ]
 
 async function fetcher(url: string): Promise<BalancesResponse> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Request failed')
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'La solicitud falló')
   return res.json()
 }
 
@@ -70,7 +70,7 @@ const T = {
     totalValue: 'Total value',
     walletsResolved: 'Wallets resolved',
     lastUpdated: 'Last updated',
-    maxWallets: 'You\'re tracking the maximum of',
+    maxWallets: "You're tracking the maximum of",
     noWallets: 'No wallets yet',
     pasteAddress: 'Paste an address above — the network is detected automatically.',
     shareLink: 'Share link',
@@ -93,8 +93,6 @@ const T = {
   },
 }
 
-type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
-
 export function WalletTracker({
   initialWallets,
   initialNetworks,
@@ -108,14 +106,15 @@ export function WalletTracker({
   const [isExporting, setIsExporting] = useState(false)
   const [locale, setLocale] = useState<'es' | 'en'>('es')
   const [alerts, setAlerts] = useState<Alert[]>(() => {
-    if (typeof window !== 'undefined') {
-      try { return JSON.parse(localStorage.getItem('ledgerline-alerts') || '[]') } catch { return [] }
+    if (typeof window === 'undefined') return []
+    try {
+      return JSON.parse(localStorage.getItem('ledgerline-alerts') || '[]')
+    } catch {
+      return []
     }
-    return []
   })
 
   const t = T[locale]
-
   const chains = useMemo(() => buildChainMap(networks), [networks])
   const encoded = encodeWallets(wallets)
   const encodedNetworks = encodeNetworks(networks)
@@ -129,9 +128,23 @@ export function WalletTracker({
     window.history.replaceState(null, '', url)
   }, [encoded, encodedNetworks])
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ledgerline-alerts', JSON.stringify(alerts))
+    }
+  }, [alerts])
+
   function removeNetwork(id: string) {
     setNetworks((prev) => prev.filter((n) => n.id !== id))
     setWallets((prev) => prev.filter((w) => w.chain !== id))
+  }
+
+  function addAlert(alert: Omit<Alert, 'id' | 'triggered'>) {
+    setAlerts((prev) => [...prev, { ...alert, id: Math.random().toString(36).slice(2), triggered: false }])
+  }
+
+  function removeAlert(id: string) {
+    setAlerts((prev) => prev.filter((a) => a.id !== id))
   }
 
   const { data, error, isValidating, mutate } = useSWR(
@@ -148,8 +161,21 @@ export function WalletTracker({
     return map
   }, [data])
 
-  const existing = useMemo(() => new Set(wallets.map(walletKey)), [wallets])
+  const syncedAlerts = useMemo(
+    () =>
+      alerts.map((alert) => {
+        const current = resultsByKey.get(alert.walletKey)?.usd
+        if (current == null) return { ...alert, triggered: false }
+        if (alert.type === 'usd') {
+          const triggered = alert.direction === 'above' ? current > alert.value : current < alert.value
+          return { ...alert, triggered }
+        }
+        return { ...alert, triggered: false }
+      }),
+    [alerts, resultsByKey],
+  )
 
+  const existing = useMemo(() => new Set(wallets.map(walletKey)), [wallets])
   const totalUsd = wallets.reduce((sum, w) => sum + (resultsByKey.get(walletKey(w))?.usd ?? 0), 0)
   const loadedCount = wallets.filter((w) => resultsByKey.get(walletKey(w))?.ok).length
 
@@ -169,13 +195,13 @@ export function WalletTracker({
       const res = await fetch(`/api/export${url.searchParams.toString() ? '?' + url.searchParams.toString() : ''}`)
       const result = await res.json()
       const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
-      const url = window.URL.createObjectURL(blob)
+      const downloadUrl = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
+      a.href = downloadUrl
       a.download = 'ledgerline-snapshot.json'
       document.body.appendChild(a)
       a.click()
-      window.URL.revokeObjectURL(url)
+      window.URL.revokeObjectURL(downloadUrl)
     } catch (err) {
       console.error('Export failed:', err)
     } finally {
@@ -211,11 +237,7 @@ export function WalletTracker({
         </h2>
         <Stat label={t.totalValue} value={wallets.length ? formatUsd(totalUsd) : '—'} highlight />
         <Stat label={t.walletsResolved} value={`${loadedCount} / ${wallets.length}`} />
-        <Stat
-          label={t.lastUpdated}
-          value={data ? new Date(data.fetchedAt).toLocaleTimeString() : '—'}
-          hint={t.autoRefresh}
-        />
+        <Stat label={t.lastUpdated} value={data ? new Date(data.fetchedAt).toLocaleTimeString() : '—'} hint={t.autoRefresh} />
       </section>
 
       <section aria-labelledby="wallets-heading" className="overflow-hidden rounded-xl border bg-card">
@@ -236,7 +258,7 @@ export function WalletTracker({
               <Download aria-hidden="true" className={isExporting ? 'animate-spin' : undefined} />
               {isExporting ? t.exporting : t.export}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => setLocale(locale === 'es' ? 'en' : 'es')} aria-label="Cambiar idioma / Switch language" title={locale === 'es' ? 'English' : 'Español'}>
+            <Button variant="ghost" size="icon" onClick={() => setLocale((prev) => (prev === 'es' ? 'en' : 'es'))} aria-label="Cambiar idioma / Switch language" title={locale === 'es' ? 'English' : 'Español'}>
               <Globe className="size-4" />
             </Button>
           </div>
@@ -254,9 +276,7 @@ export function WalletTracker({
               <WalletIcon className="size-5 text-muted-foreground" aria-hidden="true" />
             </div>
             <p className="font-medium">{t.noWallets}</p>
-            <p className="mt-1 text-sm text-muted-foreground text-pretty">
-              {t.pasteAddress}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground text-pretty">{t.pasteAddress}</p>
             <Button variant="outline" size="sm" onClick={() => setWallets(SAMPLE_WALLETS)}>
               {t.trySample}
             </Button>
@@ -270,6 +290,9 @@ export function WalletTracker({
                 chain={chains[w.chain]}
                 result={resultsByKey.get(walletKey(w))}
                 onRemove={() => setWallets((prev) => prev.filter((p) => walletKey(p) !== walletKey(w)))}
+                alerts={syncedAlerts}
+                onAddAlert={addAlert}
+                onRemoveAlert={removeAlert}
               />
             ))}
           </ul>
@@ -278,7 +301,8 @@ export function WalletTracker({
 
       {data && Object.keys(data.prices).length > 0 && (
         <p className="text-center font-mono text-xs text-muted-foreground">
-          {t.pricePrefix} {Object.entries(data.prices)
+          {t.pricePrefix}{' '}
+          {Object.entries(data.prices)
             .map(([id, price]) => {
               const symbol = Object.values(chains).find((c) => c.coingeckoId === id)?.symbol ?? id
               return `${symbol} ${formatUsd(price)}`

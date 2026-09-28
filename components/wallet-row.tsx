@@ -3,22 +3,35 @@
 import { useState } from 'react'
 import { AlertTriangle, Bell, Check, Copy, ExternalLink, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AlertDialog } from '@/components/alert-dialog'
+import { AlertForm } from '@/components/alert-form'
 import type { BalanceResult, Chain, Wallet } from '@/lib/chains'
-import { formatBalance, formatUsd, shortenAddress } from '@/lib/format'
+import { formatBalance, formatUsd, shortenAddress, walletKey } from '@/lib/chains'
+
+type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
 
 export function WalletRow({
   wallet,
   chain,
   result,
   onRemove,
+  alerts = [],
+  onAddAlert,
+  onRemoveAlert,
 }: {
   wallet: Wallet
   chain: Chain
   result?: BalanceResult
   onRemove: () => void
+  alerts?: Alert[]
+  onAddAlert?: (alert: Omit<Alert, 'id' | 'triggered'>) => void
+  onRemoveAlert?: (id: string) => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [showAlertForm, setShowAlertForm] = useState(false)
+
+  const key = walletKey(wallet)
+  const walletAlerts = alerts.filter((a) => a.walletKey === key)
+  const hasTriggeredAlerts = walletAlerts.some((a) => a.triggered)
 
   async function copy() {
     await navigator.clipboard.writeText(wallet.address)
@@ -44,7 +57,7 @@ export function WalletRow({
               type="button"
               onClick={copy}
               className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={copied ? 'Address copied' : 'Copy address'}
+              aria-label={copied ? 'Dirección copiada' : 'Copiar dirección'}
             >
               {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
             </button>
@@ -54,7 +67,7 @@ export function WalletRow({
 
       <div className="text-right md:order-none">
         {!result ? (
-          <div className="ml-auto flex flex-col items-end gap-1.5" aria-label="Loading balance">
+          <div className="ml-auto flex flex-col items-end gap-1.5" aria-label="Cargando saldo">
             <div className="h-4 w-28 animate-pulse rounded bg-muted" />
             <div className="h-3 w-16 animate-pulse rounded bg-muted" />
           </div>
@@ -64,13 +77,13 @@ export function WalletRow({
               {formatBalance(result.balance!)} <span className="text-muted-foreground">{chain.symbol}</span>
             </p>
             <p className="font-mono text-xs text-muted-foreground tabular-nums">
-              {result.usd != null ? formatUsd(result.usd) : 'Price unavailable'}
+              {result.usd != null ? formatUsd(result.usd) : 'Precio no disponible'}
             </p>
           </>
         ) : (
           <p className="flex items-center justify-end gap-1.5 text-xs text-destructive">
             <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-            {result.error ?? 'Lookup failed'}
+            {result.error ?? 'Búsqueda fallida'}
           </p>
         )}
       </div>
@@ -79,30 +92,78 @@ export function WalletRow({
         {result?.ok && result.txCount != null ? `${result.txCount.toLocaleString()} txns` : '—'}
       </p>
 
-      <div className="col-span-2 flex items-center justify-end gap-1 md:col-span-1">
-        {chain.explorerAddressUrl && (
+      <div className="col-span-2 flex flex-col items-end gap-2 md:col-span-1">
+        <div className="flex items-center justify-end gap-1">
+          {chain.explorerAddressUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<a href={chain.explorerAddressUrl(wallet.address)} target="_blank" rel="noopener noreferrer" />}
+              className="text-muted-foreground"
+            >
+              {chain.explorerName}
+              <ExternalLink aria-hidden="true" />
+            </Button>
+          )}
           <Button
             variant="ghost"
-            size="sm"
-            nativeButton={false}
-            render={
-              <a href={chain.explorerAddressUrl(wallet.address)} target="_blank" rel="noopener noreferrer" />
-            }
-            className="text-muted-foreground"
+            size="icon-sm"
+            onClick={() => setShowAlertForm((prev) => !prev)}
+            aria-label="Agregar alerta de precio"
+            className={hasTriggeredAlerts ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-foreground'}
+            title="Agregar alerta de precio"
           >
-            {chain.explorerName}
-            <ExternalLink aria-hidden="true" />
+            <Bell className={hasTriggeredAlerts ? 'fill-current' : ''} />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onRemove}
+            aria-label={`Eliminar ${wallet.label ?? wallet.address}`}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 />
+          </Button>
+        </div>
+
+        {showAlertForm && onAddAlert && (
+          <div className="w-full rounded-lg border bg-card p-3">
+            <AlertForm
+              walletKey={key}
+              onAdd={(alert) => {
+                onAddAlert(alert)
+                setShowAlertForm(false)
+              }}
+              onCancel={() => setShowAlertForm(false)}
+            />
+          </div>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onRemove}
-          aria-label={`Remove ${wallet.label ?? wallet.address}`}
-          className="text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 />
-        </Button>
+
+        {walletAlerts.length > 0 && (
+          <div className="w-full rounded-lg border bg-card p-2 text-xs">
+            <p className="mb-1 font-semibold text-muted-foreground">Alertas activas:</p>
+            <ul className="space-y-1">
+              {walletAlerts.map((alert) => (
+                <li key={alert.id} className="flex items-center justify-between gap-2">
+                  <span className={alert.triggered ? 'font-medium text-amber-600' : 'text-muted-foreground'}>
+                    {alert.direction === 'above' ? '↑' : '↓'} {alert.value}
+                    {alert.type === 'usd' ? ' USD' : '%'}
+                    {alert.triggered && ' ⚠️'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAlert?.(alert.id)}
+                    className="text-destructive hover:text-destructive/80"
+                    aria-label="Eliminar alerta"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </li>
   )
