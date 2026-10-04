@@ -1,200 +1,222 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Bell, Check, Copy, ExternalLink, Trash2 } from 'lucide-react'
-import { AlertForm } from '@/components/alert-form'
+import { Network, Plus, X } from 'lucide-react'
+import { AddNetworkDialog } from '@/components/add-network-dialog'
 import { Button } from '@/components/ui/button'
-import type { BalanceResult, Chain, Wallet } from '@/lib/chains'
-import { walletKey } from '@/lib/chains'
-import { formatBalance, formatUsd, shortenAddress } from '@/lib/format'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MAX_CUSTOM_NETWORKS, detectChain, isValidAddress, type ChainMap, type CustomNetwork, type Wallet } from '@/lib/chains'
 
 type Locale = 'es' | 'en'
 
-type Alert = { id: string; walletKey: string; type: 'usd' | 'pct'; direction: 'above' | 'below'; value: number; triggered: boolean }
-
 const T = {
   es: {
-    copyAddress: 'Copiar dirección',
-    addressCopied: 'Dirección copiada',
-    priceUnavailable: 'Precio no disponible',
-    searchFailed: 'Búsqueda fallida',
-    loadingBalance: 'Cargando saldo',
-    addPriceAlert: 'Agregar alerta de precio',
-    activeAlerts: 'Alertas activas:',
-    removeAlert: 'Eliminar alerta',
+    walletAddress: 'Dirección de billetera',
+    network: 'Red',
+    label: 'Etiqueta',
+    optional: '(opcional)',
+    placeholderAddress: '0x…, bc1…, y… (Yerbas), o una dirección de Solana',
+    placeholderLabel: 'p. ej. Cold storage',
+    addWallet: 'Agregar billetera',
+    addAnotherNetwork: '+ Agregar otra red blockchain (Optimism, Avalanche o cualquier RPC EVM)',
+    customNetworks: 'Redes personalizadas:',
+    addNetwork: '+ Agregar red',
+    removeNetwork: 'Eliminar red',
+    invalidAddress: (network: string) => `Esa no parece ser una dirección válida de ${network}.`,
+    alreadyExists: 'Esta billetera ya está en tu lista.',
+    networkButtonTitle: 'Agregar una red',
+    networkButtonAria: 'Agregar una red',
   },
   en: {
-    copyAddress: 'Copy address',
-    addressCopied: 'Address copied',
-    priceUnavailable: 'Price unavailable',
-    searchFailed: 'Search failed',
-    loadingBalance: 'Loading balance',
-    addPriceAlert: 'Add price alert',
-    activeAlerts: 'Active alerts:',
-    removeAlert: 'Remove alert',
+    walletAddress: 'Wallet address',
+    network: 'Network',
+    label: 'Label',
+    optional: '(optional)',
+    placeholderAddress: '0x…, bc1…, y… (Yerbas), or a Solana address',
+    placeholderLabel: 'e.g. Cold storage',
+    addWallet: 'Add wallet',
+    addAnotherNetwork: '+ Add another blockchain network (Optimism, Avalanche, or any EVM RPC)',
+    customNetworks: 'Custom networks:',
+    addNetwork: '+ Add network',
+    removeNetwork: 'Remove network',
+    invalidAddress: (network: string) => `That doesn't look like a valid ${network} address.`,
+    alreadyExists: 'This wallet is already on your list.',
+    networkButtonTitle: 'Add a network',
+    networkButtonAria: 'Add a network',
   },
 } as const
 
-export function WalletRow({
-  wallet,
-  chain,
-  result,
-  onRemove,
-  alerts = [],
-  onAddAlert,
-  onRemoveAlert,
-  locale = 'es',
-}: {
-  wallet: Wallet
-  chain: Chain
-  result?: BalanceResult
-  onRemove: () => void
-  alerts?: Alert[]
-  onAddAlert?: (alert: Omit<Alert, 'id' | 'triggered'>) => void
-  onRemoveAlert?: (id: string) => void
+type Props = {
+  chains: ChainMap
+  networks: CustomNetwork[]
+  existing: Set<string>
+  onAdd: (w: Wallet) => void
+  onAddNetwork: (n: CustomNetwork) => void
+  onRemoveNetwork: (id: string) => void
   locale?: Locale
-}) {
-  const [copied, setCopied] = useState(false)
-  const [showAlertForm, setShowAlertForm] = useState(false)
+}
 
-  const key = walletKey(wallet)
-  const walletAlerts = alerts.filter((a) => a.walletKey === key)
-  const hasTriggeredAlerts = walletAlerts.some((a) => a.triggered)
+export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork, onRemoveNetwork, locale = 'es' }: Props) {
+  const [address, setAddress] = useState('')
+  const [chainId, setChainId] = useState('eth')
+  const [label, setLabel] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
   const t = T[locale]
+  const selectedChainId = chains[chainId] ? chainId : 'eth'
+  const chainItems = Object.values(chains).map((c) => ({ value: c.id, label: c.name }))
+  const takenIds = new Set(networks.map((n) => n.id))
 
-  async function copy() {
-    await navigator.clipboard.writeText(wallet.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+  function handleAddressChange(value: string) {
+    setAddress(value)
+    setError(null)
+    const detected = detectChain(value)
+    if (detected && chains[detected].kind !== chains[selectedChainId].kind) setChainId(detected)
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = address.trim()
+    const chain = chains[selectedChainId]
+    if (!isValidAddress(chain, trimmed)) {
+      setError(t.invalidAddress(chain.name))
+      return
+    }
+    if (existing.has(`${selectedChainId}:${trimmed}`)) {
+      setError(t.alreadyExists)
+      return
+    }
+    onAdd({ chain: selectedChainId, address: trimmed, label: label.trim() || undefined })
+    setAddress('')
+    setLabel('')
+  }
+
+  function handleAddNetwork(network: CustomNetwork) {
+    onAddNetwork(network)
+    setChainId(network.id)
   }
 
   return (
-    <li className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_12rem_9rem_auto] md:px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-flex h-6 shrink-0 items-center rounded-md border bg-secondary px-2 font-mono text-[11px] font-medium tracking-wide text-secondary-foreground uppercase">
-          {chain.id}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{wallet.label ?? chain.name}</p>
-          <div className="flex items-center gap-1">
-            <code className="truncate font-mono text-xs text-muted-foreground" title={wallet.address}>
-              <span className="md:hidden">{shortenAddress(wallet.address)}</span>
-              <span className="hidden lg:inline">{wallet.address}</span>
-              <span className="hidden md:inline lg:hidden">{shortenAddress(wallet.address, 10)}</span>
-            </code>
-            <button
-              type="button"
-              onClick={copy}
-              className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={copied ? t.addressCopied : t.copyAddress}
-            >
-              {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
-            </button>
-          </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
+      <div className="flex flex-col gap-3 md:flex-row">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <label htmlFor="address" className="text-xs font-medium text-muted-foreground">
+            {t.walletAddress}
+          </label>
+          <Input
+            id="address"
+            value={address}
+            onChange={(e) => handleAddressChange(e.target.value)}
+            placeholder={t.placeholderAddress}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? 'address-error' : undefined}
+            className="h-10 font-mono text-sm"
+          />
         </div>
-      </div>
-
-      <div className="text-right md:order-none">
-        {!result ? (
-          <div className="ml-auto flex flex-col items-end gap-1.5" aria-label={t.loadingBalance}>
-            <div className="h-4 w-28 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-16 animate-pulse rounded bg-muted" />
-          </div>
-        ) : result.ok ? (
-          <>
-            <p className="font-mono text-sm font-medium tabular-nums">
-              {formatBalance(result.balance!)} <span className="text-muted-foreground">{chain.symbol}</span>
-            </p>
-            <p className="font-mono text-xs text-muted-foreground tabular-nums">
-              {result.usd != null ? formatUsd(result.usd) : t.priceUnavailable}
-            </p>
-          </>
-        ) : (
-          <p className="flex items-center justify-end gap-1.5 text-xs text-destructive">
-            <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-            {result.error ?? t.searchFailed}
-          </p>
-        )}
-      </div>
-
-      <p className="hidden text-right font-mono text-xs text-muted-foreground tabular-nums md:block">
-        {result?.ok && result.txCount != null ? `${result.txCount.toLocaleString()} txns` : '—'}
-      </p>
-
-      <div className="col-span-2 flex flex-col items-end gap-2 md:col-span-1">
-        <div className="flex items-center justify-end gap-1">
-          {chain.explorerAddressUrl && (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="chain" className="text-xs font-medium text-muted-foreground">
+            {t.network}
+          </label>
+          <div className="flex gap-1.5">
+            <Select items={chainItems} value={selectedChainId} onValueChange={(v) => v && setChainId(v)}>
+              <SelectTrigger id="chain" className="h-10! w-full md:w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {chainItems.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
-              variant="ghost"
-              size="sm"
-              nativeButton={false}
-              render={<a href={chain.explorerAddressUrl(wallet.address)} target="_blank" rel="noopener noreferrer" />}
-              className="text-muted-foreground"
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-10 shrink-0"
+              onClick={() => setDialogOpen(true)}
+              disabled={networks.length >= MAX_CUSTOM_NETWORKS}
+              aria-label={t.networkButtonAria}
+              title={t.networkButtonTitle}
             >
-              {chain.explorerName}
-              <ExternalLink aria-hidden="true" />
+              <Network aria-hidden="true" />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setShowAlertForm((prev) => !prev)}
-            aria-label={t.addPriceAlert}
-            className={hasTriggeredAlerts ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-foreground'}
-            title={t.addPriceAlert}
-          >
-            <Bell className={hasTriggeredAlerts ? 'fill-current' : ''} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onRemove}
-            aria-label={`Eliminar ${wallet.label ?? wallet.address}`}
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="label" className="text-xs font-medium text-muted-foreground">
+            {t.label} <span className="font-normal">{t.optional}</span>
+          </label>
+          <Input
+            id="label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={t.placeholderLabel}
+            maxLength={40}
+            className="h-10 md:w-44"
+          />
+        </div>
+        <div className="flex flex-col justify-end">
+          <Button type="submit" className="h-10 px-4">
+            <Plus aria-hidden="true" />
+            {t.addWallet}
           </Button>
         </div>
+      </div>
 
-        {showAlertForm && onAddAlert && (
-          <div className="w-full rounded-lg border bg-card p-3">
-            <AlertForm
-              locale={locale}
-              walletKey={key}
-              onAdd={(alert) => {
-                onAddAlert(alert)
-                setShowAlertForm(false)
-              }}
-              onCancel={() => setShowAlertForm(false)}
-            />
-          </div>
-        )}
+      {error && (
+        <p id="address-error" role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
-        {walletAlerts.length > 0 && (
-          <div className="w-full rounded-lg border bg-card p-2 text-xs">
-            <p className="mb-1 font-semibold text-muted-foreground">{t.activeAlerts}</p>
-            <ul className="space-y-1">
-              {walletAlerts.map((alert) => (
-                <li key={alert.id} className="flex items-center justify-between gap-2">
-                  <span className={alert.triggered ? 'font-medium text-amber-600' : 'text-muted-foreground'}>
-                    {alert.direction === 'above' ? '↑' : '↓'} {alert.value}
-                    {alert.type === 'usd' ? ' USD' : '%'}
-                    {alert.triggered && ' ⚠️'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveAlert?.(alert.id)}
-                    className="text-destructive hover:text-destructive/80"
-                    aria-label={t.removeAlert}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {networks.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setDialogOpen(true)}
+            className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          >
+            {t.addAnotherNetwork}
+          </button>
+        ) : (
+          <>
+            <span>{t.customNetworks}</span>
+            {networks.map((n) => (
+              <span
+                key={n.id}
+                className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pr-0.5 pl-2 text-secondary-foreground"
+              >
+                {n.name}
+                <button
+                  type="button"
+                  onClick={() => onRemoveNetwork(n.id)}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
+                  aria-label={`${t.removeNetwork} ${n.name}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            {networks.length < MAX_CUSTOM_NETWORKS && (
+              <button
+                type="button"
+                onClick={() => setDialogOpen(true)}
+                className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              >
+                {t.addNetwork}
+              </button>
+            )}
+          </>
         )}
       </div>
-    </li>
+
+      <AddNetworkDialog open={dialogOpen} onOpenChange={setDialogOpen} takenIds={takenIds} onAdd={handleAddNetwork} />
+    </form>
   )
 }
