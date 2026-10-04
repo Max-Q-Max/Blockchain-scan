@@ -57,25 +57,27 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
     case 'iquidus': {
       if (chain.id === 'rtm') {
         const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`)
+        
+        // Raptoreum API returns balance in satoshis (same as data.balance, not data.balanceRTM)
+        // Try multiple possible field names for robustness
         const balanceValue =
-          data?.balanceRTM ??
           data?.balance ??
+          data?.balanceRTM ??
           data?.amount ??
-          data?.result?.balanceRTM ??
           data?.result?.balance ??
+          data?.result?.balanceRTM ??
           data?.result?.amount ??
           '0'
 
-        if (
-          data?.success === false &&
-          (balanceValue === undefined || balanceValue === null || String(balanceValue).trim() === '')
-        ) {
-          throw new Error(data.error ?? 'Address not found')
+        if (data?.success === false && !balanceValue) {
+          throw new Error(data?.error ?? 'Address not found')
         }
 
+        // Balance is already in satoshis, convert to RTM using parseUnits
         return { raw: parseUnits(String(balanceValue), chain.decimals), txCount: null }
       }
 
+      // Yerbas and other iquidus chains
       const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
         signal: AbortSignal.timeout(TIMEOUT_MS),
         cache: 'no-store',
@@ -94,8 +96,8 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
 }
 
 function parseUnits(value: string, decimals: number): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value)
-  if (!match) throw new Error('Unexpected balance format from explorer')
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim())
+  if (!match) throw new Error(`Unexpected balance format from explorer: ${value}`)
   const [, sign, whole, fraction = ''] = match
   const raw = BigInt(whole + fraction.padEnd(decimals, '0').slice(0, decimals))
   return sign ? -raw : raw
@@ -199,4 +201,3 @@ export async function getBalances(
 
   return { results, prices }
 }
-
