@@ -31,6 +31,15 @@ export function formatUnits(raw: bigint, decimals: number): string {
   return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`
 }
 
+/**
+ * Verifica que una URL de RPC EVM responda correctamente,
+ * consultando el chainId de la red.
+ */
+export async function verifyEvmRpc(rpcUrl: string): Promise<{ chainId: number }> {
+  const chainIdHex = await rpc(rpcUrl, 'eth_chainId', [])
+  return { chainId: Number(BigInt(chainIdHex)) }
+}
+
 async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigint; txCount: number | null }> {
   switch (chain.kind) {
     case 'evm': {
