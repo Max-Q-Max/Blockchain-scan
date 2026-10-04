@@ -55,26 +55,40 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
       return { raw: BigInt(result.value), txCount: null }
     }
     case 'iquidus': {
-      // Raptoreum uses /api/getaddressbalance, Yerbas uses /ext/getbalance
       if (chain.id === 'rtm') {
         const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`)
-        if (!data.success) throw new Error(data.error ?? 'Address not found')
-        return { raw: parseUnits(data.balanceRTM.toString(), chain.decimals), txCount: null }
-      } else {
-        const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          cache: 'no-store',
-          redirect: 'error',
-        })
-        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
-        const text = (await res.text()).trim()
-        if (text.startsWith('{')) {
-          const err = JSON.parse(text)
-          if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
-          throw new Error(err.error ?? 'Explorer error')
+        const balanceValue =
+          data?.balanceRTM ??
+          data?.balance ??
+          data?.amount ??
+          data?.result?.balanceRTM ??
+          data?.result?.balance ??
+          data?.result?.amount ??
+          '0'
+
+        if (
+          data?.success === false &&
+          (balanceValue === undefined || balanceValue === null || String(balanceValue).trim() === '')
+        ) {
+          throw new Error(data.error ?? 'Address not found')
         }
-        return { raw: parseUnits(text, chain.decimals), txCount: null }
+
+        return { raw: parseUnits(String(balanceValue), chain.decimals), txCount: null }
       }
+
+      const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        cache: 'no-store',
+        redirect: 'error',
+      })
+      if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+      const text = (await res.text()).trim()
+      if (text.startsWith('{')) {
+        const err = JSON.parse(text)
+        if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
+        throw new Error(err.error ?? 'Explorer error')
+      }
+      return { raw: parseUnits(text, chain.decimals), txCount: null }
     }
   }
 }
@@ -157,7 +171,14 @@ export async function getBalances(
         const chain = chains[w.chain]
         try {
           const { raw, txCount } = await getRawBalance(chain, w.address)
-          return { chain: w.chain, address: w.address, ok: true, raw: raw.toString(), balance: formatUnits(raw, chain.decimals), txCount }
+          return {
+            chain: w.chain,
+            address: w.address,
+            ok: true,
+            raw: raw.toString(),
+            balance: formatUnits(raw, chain.decimals),
+            txCount,
+          }
         } catch (err) {
           return {
             chain: w.chain,
@@ -178,3 +199,4 @@ export async function getBalances(
 
   return { results, prices }
 }
+

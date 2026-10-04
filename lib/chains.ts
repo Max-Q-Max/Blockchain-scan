@@ -257,8 +257,8 @@ export function decodeNetworks(value: string | undefined | null): CustomNetwork[
 const EVM_RE = /^0x[a-fA-F0-9]{40}$/
 const BTC_RE = /^(bc1[a-z0-9]{25,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/
 const SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-const YERBAS_RE = /^y[1-9A-HJ-NP-Za-km-z]{33}$/
-const RAPT_RE = /^R[1-9A-HJ-NP-Za-km-z]{32,44}$/
+const YERBAS_RE = /^y[1-9A-HJ-NP-Za-km-z]{33}$/i
+const RAPT_RE = /^R[1-9A-HJ-NP-Za-km-z]{32,44}$/i
 
 export function isValidAddress(chain: Chain, address: string): boolean {
   switch (chain.kind) {
@@ -329,3 +329,4 @@ function safeDecode(v: string, max: number) {
     return undefined
   }
 }
+
