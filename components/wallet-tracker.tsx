@@ -177,7 +177,7 @@ export function WalletTracker({
     if (!data) return
     setIsExporting(true)
     const csv = [
-      ['Chain', 'Address', 'Balance', 'USD Value'].join(',''),
+      ['Chain', 'Address', 'Balance', 'USD Value'].join(','),
       ...data.results.map((r) => {
         const chain = chainMap.get(r.chain)
         const balance = parseFloat(r.balance) || 0
