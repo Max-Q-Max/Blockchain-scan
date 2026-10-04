@@ -24,13 +24,13 @@ const MAX_WALLETS = 25
 
 const SAMPLE_WALLETS: Wallet[] = [
   { chain: 'eth', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', label: 'vitalik.eth' },
-  { chain: 'btc', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', label: 'Billetera BTC de ejemplo' },
-  { chain: 'sol', address: 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg', label: 'Billetera SOL de ejemplo' },
+  { chain: 'btc', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', label: 'BTC Wallet Example' },
+  { chain: 'sol', address: 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg', label: 'SOL Wallet Example' },
 ]
 
 async function fetcher(url: string): Promise<BalancesResponse> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'La solicitud falló')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
@@ -42,61 +42,61 @@ const T = {
     totalValue: 'Valor total',
     walletsResolved: 'Billeteras resueltas',
     lastUpdated: 'Última actualización',
-    maxWallets: 'Has alcanzado el máximo de',
-    noWallets: 'Sin billeteras aún',
-    pasteAddress: 'Pega una dirección arriba — la red se detecta automáticamente.',
+    autoRefresh: 'Se actualiza automáticamente cada 30s',
     shareLink: 'Compartir enlace',
-    copied: 'Copiado',
+    copied: '¡Copiado!',
     refresh: 'Actualizar',
     export: 'Exportar',
     exporting: 'Exportando…',
-    trySample: 'Probar billeteras de ejemplo',
-    autoRefresh: 'Auto-actualiza cada 60s',
-    pricePrefix: 'Precios:',
-    alerts: 'Alertas',
-    addAlert: 'Agregar alerta',
-    alertUsd: 'USD',
-    alertPercent: '%',
-    alertAbove: 'Sobre',
-    alertBelow: 'Bajo',
-    alertTriggered: 'Alerta activada',
-    noAlerts: 'Sin alertas configuradas',
-    deleteAlert: 'Eliminar alerta',
+    noWallets: 'Sin billeteras agregadas',
+    pasteAddress: 'Pega una dirección de billetera arriba para comenzar',
+    invalidAddress: (network: string) => `Esa no parece ser una dirección válida de ${network}.`,
+    balance: 'Saldo',
+    chain: 'Red',
+    actions: 'Acciones',
+    remove: 'Eliminar',
+    removeWallet: 'Eliminar billetera',
+    removeWalletDesc: '¿Está seguro de que desea eliminar esta billetera?',
+    confirm: 'Confirmar',
+    cancel: 'Cancelar',
+    switchLanguage: 'Cambiar idioma',
+    english: 'English',
+    spanish: 'Español',
+    error: 'Error',
+    maxWallets: 'Límite de',
+    maxWalletsDesc: 'billeteras. Elimina una para agregar otra.',
   },
   en: {
-    addWallet: 'Add a wallet',
+    addWallet: 'Add wallet',
     trackedWallets: 'Tracked wallets',
     portfolioSummary: 'Portfolio summary',
     totalValue: 'Total value',
     walletsResolved: 'Wallets resolved',
     lastUpdated: 'Last updated',
-    maxWallets: "You're tracking the maximum of",
-    noWallets: 'No wallets yet',
-    pasteAddress: 'Paste an address above — the network is detected automatically.',
+    autoRefresh: 'Auto-refreshes every 30s',
     shareLink: 'Share link',
-    copied: 'Copied',
+    copied: 'Copied!',
     refresh: 'Refresh',
     export: 'Export',
     exporting: 'Exporting…',
-    trySample: 'Try sample wallets',
-    autoRefresh: 'Auto-refreshes every 60s',
-    pricePrefix: 'Prices:',
-    alerts: 'Alerts',
-    addAlert: 'Add alert',
-    alertUsd: 'USD',
-    alertPercent: '%',
-    alertAbove: 'Above',
-    alertBelow: 'Below',
-    alertTriggered: 'Alert triggered',
-    noAlerts: 'No alerts configured',
-    deleteAlert: 'Delete alert',
+    noWallets: 'No wallets added',
+    pasteAddress: 'Paste a wallet address above to get started',
+    invalidAddress: (network: string) => `That doesn't look like a valid ${network} address.`,
+    balance: 'Balance',
+    chain: 'Chain',
+    actions: 'Actions',
+    remove: 'Remove',
+    removeWallet: 'Remove wallet',
+    removeWalletDesc: 'Are you sure you want to remove this wallet?',
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    switchLanguage: 'Switch language',
+    english: 'English',
+    spanish: 'Español',
+    error: 'Error',
+    maxWallets: 'Limit of',
+    maxWalletsDesc: 'wallets. Remove one to add another.',
   },
-}
-
-const LOCAL_STORAGE_KEYS = {
-  wallets: 'ledgerline-wallets',
-  networks: 'ledgerline-networks',
-  alerts: 'ledgerline-alerts',
 }
 
 export function WalletTracker({
@@ -110,162 +110,128 @@ export function WalletTracker({
     if (initialWallets.length > 0) return initialWallets
     if (typeof window === 'undefined') return []
     try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.wallets)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
+      const stored = localStorage.getItem('ledgerline-wallets')
+      return stored ? JSON.parse(stored) : SAMPLE_WALLETS
     } catch {
-      return []
+      return SAMPLE_WALLETS
     }
   })
-
-  const [networks, setNetworks] = useState<CustomNetwork[]>(() => {
-    if (initialNetworks.length > 0) return initialNetworks
-    if (typeof window === 'undefined') return []
-    try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.networks)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  })
-
-  const [linkCopied, setLinkCopied] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
+  const [networks, setNetworks] = useState<CustomNetwork[]>(initialNetworks)
   const [locale, setLocale] = useState<'es' | 'en'>('es')
   const [alerts, setAlerts] = useState<Alert[]>(() => {
     if (typeof window === 'undefined') return []
     try {
-      return JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.alerts) || '[]')
+      const stored = localStorage.getItem('ledgerline-alerts')
+      return stored ? JSON.parse(stored) : []
     } catch {
       return []
     }
   })
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   const t = T[locale]
-  const chains = useMemo(() => buildChainMap(networks), [networks])
-  const encoded = encodeWallets(wallets)
-  const encodedNetworks = encodeNetworks(networks)
+  const chainMap = useMemo(() => buildChainMap(networks), [networks])
+  const queryString = useMemo(() => {
+    const w = encodeWallets(wallets)
+    const n = encodeNetworks(networks)
+    return w && n ? `?w=${w}&n=${n}` : ''
+  }, [wallets, networks])
 
   useEffect(() => {
-    const url = new URL(window.location.href)
-    if (encoded) url.searchParams.set('w', encoded)
-    else url.searchParams.delete('w')
-    if (encodedNetworks) url.searchParams.set('n', encodedNetworks)
-    else url.searchParams.delete('n')
-    window.history.replaceState(null, '', url)
-  }, [encoded, encodedNetworks])
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_KEYS.wallets, JSON.stringify(wallets))
-    }
+    localStorage.setItem('ledgerline-wallets', JSON.stringify(wallets))
   }, [wallets])
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_KEYS.networks, JSON.stringify(networks))
-    }
-  }, [networks])
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_KEYS.alerts, JSON.stringify(alerts))
-    }
+    localStorage.setItem('ledgerline-alerts', JSON.stringify(alerts))
   }, [alerts])
+
+  const { data, error, isValidating, mutate } = useSWR<BalancesResponse>(
+    wallets.length > 0 ? `/api/balances?${new URLSearchParams({ w: encodeWallets(wallets), n: encodeNetworks(networks) }).toString()}` : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000, focusThrottleInterval: 30000 }
+  )
+
+  const loadedCount = useMemo(() => data?.results.filter((r) => r.balance !== '0').length ?? 0, [data])
+  const totalUsd = useMemo(
+    () =>
+      data
+        ? data.results.reduce((sum, r) => {
+            const chain = chainMap.get(r.chain)
+            if (!chain) return sum
+            const balance = parseFloat(r.balance) || 0
+            const price = data.prices[chain.coingeckoId!] ?? 0
+            return sum + balance * price
+          }, 0)
+        : 0,
+    [data, chainMap]
+  )
+
+  function copyLink() {
+    navigator.clipboard.writeText(`${typeof window !== 'undefined' ? window.location.origin : ''}${queryString || '/'}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  function exportData() {
+    if (!data) return
+    setIsExporting(true)
+    const csv = [
+      ['Chain', 'Address', 'Balance', 'USD Value'].join(',''),
+      ...data.results.map((r) => {
+        const chain = chainMap.get(r.chain)
+        const balance = parseFloat(r.balance) || 0
+        const price = data.prices[chain?.coingeckoId!] ?? 0
+        const usdValue = balance * price
+        return [r.chain, r.address, balance.toString(), usdValue.toString()].join(',')
+      }),
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `blockchain-scan-${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    setIsExporting(false)
+  }
 
   function removeNetwork(id: string) {
     setNetworks((prev) => prev.filter((n) => n.id !== id))
-    setWallets((prev) => prev.filter((w) => w.chain !== id))
-  }
-
-  function addAlert(alert: Omit<Alert, 'id' | 'triggered'>) {
-    setAlerts((prev) => [...prev, { ...alert, id: Math.random().toString(36).slice(2), triggered: false }])
-  }
-
-  function removeAlert(id: string) {
-    setAlerts((prev) => prev.filter((a) => a.id !== id))
-  }
-
-  const { data, error, isValidating, mutate } = useSWR(
-    encoded
-      ? `/api/balances?w=${encodeURIComponent(encoded)}${encodedNetworks ? `&n=${encodeURIComponent(encodedNetworks)}` : ''}`
-      : null,
-    fetcher,
-    { keepPreviousData: true, refreshInterval: 60_000, revalidateOnFocus: false },
-  )
-
-  const resultsByKey = useMemo(() => {
-    const map = new Map<string, BalanceResult>()
-    for (const r of data?.results ?? []) map.set(walletKey(r), r)
-    return map
-  }, [data])
-
-  const syncedAlerts = useMemo(
-    () =>
-      alerts.map((alert) => {
-        const current = resultsByKey.get(alert.walletKey)?.usd
-        if (current == null) return { ...alert, triggered: false }
-        if (alert.type === 'usd') {
-          const triggered = alert.direction === 'above' ? current > alert.value : current < alert.value
-          return { ...alert, triggered }
-        }
-        return { ...alert, triggered: false }
-      }),
-    [alerts, resultsByKey],
-  )
-
-  const existing = useMemo(() => new Set(wallets.map(walletKey)), [wallets])
-  const totalUsd = wallets.reduce((sum, w) => sum + (resultsByKey.get(walletKey(w))?.usd ?? 0), 0)
-  const loadedCount = wallets.filter((w) => resultsByKey.get(walletKey(w))?.ok).length
-
-  async function copyLink() {
-    await navigator.clipboard.writeText(window.location.href)
-    setLinkCopied(true)
-    setTimeout(() => setLinkCopied(false), 1500)
-  }
-
-  async function exportData() {
-    if (!data || wallets.length === 0) return
-    setIsExporting(true)
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.set('w', encoded!)
-      url.searchParams.set('n', encodedNetworks!)
-      const res = await fetch(`/api/export${url.searchParams.toString() ? '?' + url.searchParams.toString() : ''}`)
-      const result = await res.json()
-      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
-      const downloadUrl = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = downloadUrl
-      a.download = 'ledgerline-snapshot.json'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(downloadUrl)
-    } catch (err) {
-      console.error('Export failed:', err)
-    } finally {
-      setIsExporting(false)
-    }
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">{t.trackedWallets}</h1>
+          <p className="text-sm text-muted-foreground">{t.portfolioSummary}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setLocale((prev) => (prev === 'es' ? 'en' : 'es'))}
+          aria-label={t.switchLanguage}
+          title={locale === 'es' ? t.english : t.spanish}
+          className="flex items-center gap-2"
+        >
+          <Globe className="size-4" />
+          <span className="text-xs font-medium">{locale.toUpperCase()}</span>
+        </Button>
+      </header>
+
       <section aria-labelledby="add-heading" className="rounded-xl border bg-card p-4 md:p-5">
         <h2 id="add-heading" className="sr-only">
           {t.addWallet}
         </h2>
         {wallets.length >= MAX_WALLETS ? (
           <p className="text-sm text-muted-foreground">
-            {t.maxWallets} {MAX_WALLETS} {locale === 'es' ? 'billeteras. Elimina una para agregar otra.' : 'wallets. Remove one to add another.'}
+            {t.maxWallets} {MAX_WALLETS} {t.maxWalletsDesc}
           </p>
         ) : (
           <AddWalletForm
-            chains={chains}
+            chains={Array.from(chainMap.values())}
             networks={networks}
-            existing={existing}
+            existing={wallets}
             onAdd={(w) => setWallets((prev) => [...prev, w])}
             onAddNetwork={(n) => setNetworks((prev) => [...prev, n])}
             onRemoveNetwork={removeNetwork}
@@ -300,15 +266,12 @@ export function WalletTracker({
               <Download aria-hidden="true" className={isExporting ? 'animate-spin' : undefined} />
               {isExporting ? t.exporting : t.export}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => setLocale((prev) => (prev === 'es' ? 'en' : 'es'))} aria-label="Cambiar idioma / Switch language" title={locale === 'es' ? 'English' : 'Español'}>
-              <Globe className="size-4" />
-            </Button>
           </div>
         </div>
 
         {error && (
           <p role="alert" className="border-b bg-destructive/10 px-5 py-2 text-sm text-destructive">
-            {error.message}
+            {t.error}: {error.message}
           </p>
         )}
 
@@ -319,49 +282,49 @@ export function WalletTracker({
             </div>
             <p className="font-medium">{t.noWallets}</p>
             <p className="mt-1 text-sm text-muted-foreground text-pretty">{t.pasteAddress}</p>
-            <Button variant="outline" size="sm" onClick={() => setWallets(SAMPLE_WALLETS)}>
-              {t.trySample}
-            </Button>
           </div>
         ) : (
-          <ul className="divide-y" aria-busy={isValidating}>
-            {wallets.map((w) => (
-              <WalletRow
-                key={walletKey(w)}
-                wallet={w}
-                chain={chains[w.chain]}
-                result={resultsByKey.get(walletKey(w))}
-                onRemove={() => setWallets((prev) => prev.filter((p) => walletKey(p) !== walletKey(w)))}
-                alerts={syncedAlerts}
-                onAddAlert={addAlert}
-                onRemoveAlert={removeAlert}
-              />
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b text-xs font-medium text-muted-foreground">
+                  <th className="px-4 py-2 text-left md:px-5">{t.chain}</th>
+                  <th className="px-4 py-2 text-left md:px-5">Address</th>
+                  <th className="px-4 py-2 text-right md:px-5">{t.balance}</th>
+                  <th className="px-4 py-2 text-right md:px-5">USD</th>
+                  <th className="px-4 py-2 text-right md:px-5">{t.actions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {wallets.map((w) => (
+                  <WalletRow
+                    key={walletKey(w)}
+                    wallet={w}
+                    chain={chainMap.get(w.chain)}
+                    balance={data?.results.find((r) => r.chain === w.chain && r.address === w.address)?.balance}
+                    price={data?.prices[chainMap.get(w.chain)?.coingeckoId!] ?? null}
+                    alerts={alerts.filter((a) => a.walletKey === walletKey(w))}
+                    onAddAlert={(alert) => setAlerts((prev) => [...prev, { ...alert, id: Math.random().toString(36) }])}
+                    onRemoveAlert={(id) => setAlerts((prev) => prev.filter((a) => a.id !== id))}
+                    onRemoveWallet={() => setWallets((prev) => prev.filter((x) => walletKey(x) !== walletKey(w)))}
+                    locale={locale}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
-
-      {data && Object.keys(data.prices).length > 0 && (
-        <p className="text-center font-mono text-xs text-muted-foreground">
-          {t.pricePrefix}{' '}
-          {Object.entries(data.prices)
-            .map(([id, price]) => {
-              const symbol = Object.values(chains).find((c) => c.coingeckoId === id)?.symbol ?? id
-              return `${symbol} ${formatUsd(price)}`
-            })
-            .join('  ·  ')}
-        </p>
-      )}
     </div>
   )
 }
 
-function Stat({ label, value, hint, highlight }: { label: string; value: string; hint?: string; highlight?: boolean }) {
+function Stat({ label, value, highlight, hint }: { label: string; value: string; highlight?: boolean; hint?: string }) {
   return (
-    <div className="bg-card px-5 py-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${highlight ? 'text-primary' : ''}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+    <div className={`flex flex-col gap-2 px-4 py-3 md:px-5 ${highlight ? 'bg-primary/5' : 'bg-muted/50'}`}>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className={`text-lg font-bold ${highlight ? 'text-primary' : ''}`}>{value}</span>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </div>
   )
 }

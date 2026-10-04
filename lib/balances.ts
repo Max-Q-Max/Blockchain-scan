@@ -1,26 +1,24 @@
-import 'server-only'
-import { CHAIN_BY_ID, type BalanceResult, type Chain, type ChainMap, type Wallet } from '@/lib/chains'
+import type { Chain } from '@/lib/chains'
 
 const TIMEOUT_MS = 10_000
 
-async function fetchJson(url: string, init?: RequestInit) {
-  const res = await fetch(url, {
-    ...init,
-    headers: { 'content-type': 'application/json', accept: 'application/json', ...init?.headers },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    cache: 'no-store',
-    redirect: 'error',
-  })
-  if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+async function fetchJson(url: string) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), cache: 'no-store', redirect: 'error' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 async function rpc(url: string, method: string, params: unknown[]) {
-  const data = await fetchJson(url, {
+  const res = await fetch(url, {
     method: 'POST',
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    cache: 'no-store',
   })
-  if (data.error) throw new Error(data.error.message ?? 'RPC error')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  if (data.error) throw new Error(data.error.message ?? `RPC error: ${data.error.code}`)
   return data.result
 }
 
@@ -55,49 +53,41 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
       return { raw: BigInt(result.value), txCount: null }
     }
     case 'iquidus': {
+      // Raptoreum uses /api/getaddressbalance endpoint
       if (chain.id === 'rtm') {
-        const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`)
-        
-        // Raptoreum API returns balance in satoshis (same as data.balance, not data.balanceRTM)
-        // Try multiple possible field names for robustness
-        const balanceValue =
-          data?.balance ??
-          data?.balanceRTM ??
-          data?.amount ??
-          data?.result?.balance ??
-          data?.result?.balanceRTM ??
-          data?.result?.amount ??
-          '0'
-
-        if (data?.success === false && !balanceValue) {
-          throw new Error(data?.error ?? 'Address not found')
+        try {
+          const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance?address=${encodeURIComponent(address)}`)
+          // Handle the case where balanceRTM might be 0, undefined, or string
+          const balance = data.balanceRTM !== undefined && data.balanceRTM !== null ? data.balanceRTM : (data.balance ?? 0)
+          return { raw: parseUnits(String(balance), chain.decimals), txCount: null }
+        } catch (err) {
+          // Try alternative format
+          const altData = await fetchJson(`${chain.explorerApiUrl}/api/getaddress/${encodeURIComponent(address)}`)
+          const balance = altData.balance ?? altData.balanceRTM ?? 0
+          return { raw: parseUnits(String(balance), chain.decimals), txCount: null }
         }
-
-        // Balance is already in satoshis, convert to RTM using parseUnits
-        return { raw: parseUnits(String(balanceValue), chain.decimals), txCount: null }
+      } else {
+        const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          cache: 'no-store',
+          redirect: 'error',
+        })
+        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
+        const text = (await res.text()).trim()
+        if (text.startsWith('{')) {
+          const err = JSON.parse(text)
+          if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
+          throw new Error(err.error ?? 'Explorer error')
+        }
+        return { raw: parseUnits(text, chain.decimals), txCount: null }
       }
-
-      // Yerbas and other iquidus chains
-      const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        cache: 'no-store',
-        redirect: 'error',
-      })
-      if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
-      const text = (await res.text()).trim()
-      if (text.startsWith('{')) {
-        const err = JSON.parse(text)
-        if (err.error === 'address not found.') return { raw: BigInt(0), txCount: 0 }
-        throw new Error(err.error ?? 'Explorer error')
-      }
-      return { raw: parseUnits(text, chain.decimals), txCount: null }
     }
   }
 }
 
 function parseUnits(value: string, decimals: number): bigint {
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim())
-  if (!match) throw new Error(`Unexpected balance format from explorer: ${value}`)
+  if (!match) throw new Error('Unexpected balance format from explorer')
   const [, sign, whole, fraction = ''] = match
   const raw = BigInt(whole + fraction.padEnd(decimals, '0').slice(0, decimals))
   return sign ? -raw : raw
@@ -105,99 +95,49 @@ function parseUnits(value: string, decimals: number): bigint {
 
 async function getExplorerPrice(chain: Chain): Promise<number | null> {
   try {
-    const res = await fetch(`${chain.explorerApiUrl}/ext/getcurrentprice`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      next: { revalidate: 60 },
+    if (chain.kind === 'evm') {
+      const data = await fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`)
+      return data[chain.coingeckoId!]?.usd ?? null
+    } else if (chain.kind === 'bitcoin') {
+      const data = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')
+      return data.bitcoin?.usd ?? null
+    } else if (chain.kind === 'solana') {
+      const data = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd')
+      return data.solana?.usd ?? null
+    }
+  } catch {}
+  return null
+}
+
+export async function getBalances(chains: Chain[], wallets: Array<{ chain: string; address: string }>): Promise<{ results: { chain: string; address: string; balance: string; txCount: number | null }[]; prices: Record<string, number>; fetchedAt: string }> {
+  const chainMap = new Map(chains.map((c) => [c.id, c]))
+  const results = await Promise.all(
+    wallets.map(async (w) => {
+      const chain = chainMap.get(w.chain)!
+      try {
+        const { raw, txCount } = await getRawBalance(chain, w.address)
+        return { chain: w.chain, address: w.address, balance: formatUnits(raw, chain.decimals), txCount }
+      } catch (err) {
+        return { chain: w.chain, address: w.address, balance: '0', txCount: null, error: String(err) }
+      }
     })
-    if (!res.ok) return null
-    const data = await res.json()
-    const price = Number(data.last_price_usd ?? data.last_price_usdt)
-    return Number.isFinite(price) && price > 0 ? price : null
-  } catch {
-    return null
-  }
+  )
+
+  const prices = await getPrices(chains.filter((c) => c.coingeckoId).map((c) => c.coingeckoId!))
+  return { results, prices, fetchedAt: new Date().toISOString() }
 }
 
 export async function getPrices(ids: string[]): Promise<Record<string, number>> {
   if (ids.length === 0) return {}
   try {
-    const data = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`,
-      { signal: AbortSignal.timeout(TIMEOUT_MS), next: { revalidate: 60 } },
-    ).then((r) => (r.ok ? r.json() : {}))
-    return Object.fromEntries(
-      Object.entries(data as Record<string, { usd?: number }>)
-        .filter(([, v]) => typeof v?.usd === 'number')
-        .map(([k, v]) => [k, v.usd as number]),
-    )
-  } catch {
+    const data = await fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`)
+    const result: Record<string, number> = {}
+    for (const [id, priceData] of Object.entries(data)) {
+      result[id] = (priceData as Record<string, number>).usd ?? 0
+    }
+    return result
+  } catch (err) {
+    console.error('Price fetch error:', err)
     return {}
   }
-}
-
-export async function verifyEvmRpc(rpcUrl: string): Promise<{ chainId: number; blockNumber: number }> {
-  const [chainId, blockNumber] = await Promise.all([
-    rpc(rpcUrl, 'eth_chainId', []),
-    rpc(rpcUrl, 'eth_blockNumber', []),
-  ])
-  if (typeof chainId !== 'string' || typeof blockNumber !== 'string') throw new Error('Not an EVM JSON-RPC endpoint')
-  return { chainId: Number(BigInt(chainId)), blockNumber: Number(BigInt(blockNumber)) }
-}
-
-export async function getBalances(
-  wallets: Wallet[],
-  chains: ChainMap = CHAIN_BY_ID,
-): Promise<{ results: BalanceResult[]; prices: Record<string, number> }> {
-  const walletChains = [...new Set(wallets.map((w) => chains[w.chain]))]
-  const explorerPriced = walletChains.filter((c) => c.kind === 'iquidus' && c.coingeckoId)
-  const priceIds = [
-    ...new Set(
-      walletChains
-        .filter((c) => c.kind !== 'iquidus')
-        .map((c) => c.coingeckoId)
-        .filter((id): id is string => !!id),
-    ),
-  ]
-  const loadPrices = async () => {
-    const [geckoPrices, explorerPrices] = await Promise.all([
-      getPrices(priceIds),
-      Promise.all(explorerPriced.map(async (c) => [c.coingeckoId!, await getExplorerPrice(c)] as const)),
-    ])
-    for (const [key, price] of explorerPrices) if (price !== null) geckoPrices[key] = price
-    return geckoPrices
-  }
-  const [prices, results] = await Promise.all([
-    loadPrices(),
-    Promise.all(
-      wallets.map(async (w): Promise<BalanceResult> => {
-        const chain = chains[w.chain]
-        try {
-          const { raw, txCount } = await getRawBalance(chain, w.address)
-          return {
-            chain: w.chain,
-            address: w.address,
-            ok: true,
-            raw: raw.toString(),
-            balance: formatUnits(raw, chain.decimals),
-            txCount,
-          }
-        } catch (err) {
-          return {
-            chain: w.chain,
-            address: w.address,
-            ok: false,
-            error: err instanceof Error && err.name !== 'TimeoutError' ? err.message : 'Explorer request timed out',
-          }
-        }
-      }),
-    ),
-  ])
-
-  for (const r of results) {
-    const id = chains[r.chain].coingeckoId
-    const price = id ? prices[id] : undefined
-    r.usd = r.ok && price !== undefined ? Number(r.balance) * price : null
-  }
-
-  return { results, prices }
 }

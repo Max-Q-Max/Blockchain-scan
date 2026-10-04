@@ -1,181 +1,158 @@
 'use client'
 
-import { useState } from 'react'
-import { Network, Plus, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AddNetworkDialog } from '@/components/add-network-dialog'
-import { MAX_CUSTOM_NETWORKS, detectChain, isValidAddress, type ChainMap, type CustomNetwork, type Wallet } from '@/lib/chains'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { Chain, CustomNetwork, Wallet } from '@/lib/chains'
 
-type Props = {
-  chains: ChainMap
-  networks: CustomNetwork[]
-  existing: Set<string>
-  onAdd: (w: Wallet) => void
-  onAddNetwork: (n: CustomNetwork) => void
-  onRemoveNetwork: (id: string) => void
+const T = {
+  es: {
+    addWallet: 'Agregar billetera',
+    enterAddress: 'Ingresa la dirección de la billetera',
+    selectChain: 'Selecciona una red',
+    walletLabel: 'Etiqueta (opcional)',
+    addCustomNetwork: 'Agregar red personalizada',
+    networkName: 'Nombre de la red',
+    rpcUrl: 'URL RPC',
+    add: 'Agregar',
+    cancel: 'Cancelar',
+    invalidAddress: (network: string) => `Esa no parece ser una dirección válida de ${network}.`,
+  },
+  en: {
+    addWallet: 'Add wallet',
+    enterAddress: 'Enter wallet address',
+    selectChain: 'Select a chain',
+    walletLabel: 'Label (optional)',
+    addCustomNetwork: 'Add custom network',
+    networkName: 'Network name',
+    rpcUrl: 'RPC URL',
+    add: 'Add',
+    cancel: 'Cancel',
+    invalidAddress: (network: string) => `That doesn't look like a valid ${network} address.`,
+  },
 }
 
-export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork, onRemoveNetwork }: Props) {
+export function AddWalletForm({
+  chains,
+  networks,
+  existing,
+  onAdd,
+  onAddNetwork,
+  onRemoveNetwork,
+}: {
+  chains: Chain[]
+  networks: CustomNetwork[]
+  existing: Wallet[]
+  onAdd: (wallet: Wallet) => void
+  onAddNetwork: (network: CustomNetwork) => void
+  onRemoveNetwork: (id: string) => void
+}) {
+  const [locale, setLocale] = useState<'es' | 'en'>('es')
   const [address, setAddress] = useState('')
-  const [chainId, setChainId] = useState('eth')
+  const [chain, setChain] = useState(chains[0]?.id || '')
   const [label, setLabel] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [networkName, setNetworkName] = useState('')
+  const [rpcUrl, setRpcUrl] = useState('')
 
-  const selectedChainId = chains[chainId] ? chainId : 'eth'
-  const chainItems = Object.values(chains).map((c) => ({ value: c.id, label: c.name }))
-  const takenIds = new Set(networks.map((n) => n.id))
+  const t = T[locale]
+  const selectedChain = chains.find((c) => c.id === chain)
 
-  function handleAddressChange(value: string) {
-    setAddress(value)
-    setError(null)
-    const detected = detectChain(value)
-    if (detected && chains[detected].kind !== chains[selectedChainId].kind) setChainId(detected)
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const trimmed = address.trim()
-    const chain = chains[selectedChainId]
-    if (!isValidAddress(chain, trimmed)) {
-      setError(`That doesn't look like a valid ${chain.name} address.`)
+  function handleAdd() {
+    if (!address.trim() || !chain) return
+    if (selectedChain?.validate && !selectedChain.validate(address.trim())) {
+      alert(t.invalidAddress(selectedChain.name))
       return
     }
-    if (existing.has(`${selectedChainId}:${trimmed}`)) {
-      setError('This wallet is already on your list.')
-      return
-    }
-    onAdd({ chain: selectedChainId, address: trimmed, label: label.trim() || undefined })
+    onAdd({ chain, address: address.trim(), label: label.trim() || address.slice(0, 6) })
     setAddress('')
     setLabel('')
   }
 
-  function handleAddNetwork(network: CustomNetwork) {
-    onAddNetwork(network)
-    setChainId(network.id)
+  function handleAddNetwork() {
+    if (!networkName.trim() || !rpcUrl.trim()) return
+    onAddNetwork({ id: `custom-${Date.now()}`, name: networkName.trim(), rpcUrl: rpcUrl.trim() })
+    setNetworkName('')
+    setRpcUrl('')
+    setDialogOpen(false)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
-      <div className="flex flex-col gap-3 md:flex-row">
-        <div className="flex flex-1 flex-col gap-1.5">
-          <label htmlFor="address" className="text-xs font-medium text-muted-foreground">
-            Wallet address
-          </label>
-          <Input
-            id="address"
-            value={address}
-            onChange={(e) => handleAddressChange(e.target.value)}
-            placeholder="0x…, bc1…, y… (Yerbas), or a Solana address"
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? 'address-error' : undefined}
-            className="h-10 font-mono text-sm"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="chain" className="text-xs font-medium text-muted-foreground">
-            Network
-          </label>
-          <div className="flex gap-1.5">
-            <Select items={chainItems} value={selectedChainId} onValueChange={(v) => v && setChainId(v)}>
-              <SelectTrigger id="chain" className="h-10! w-full md:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {chainItems.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-10 shrink-0"
-              onClick={() => setDialogOpen(true)}
-              disabled={networks.length >= MAX_CUSTOM_NETWORKS}
-              aria-label="Add a network"
-              title="Add a network"
-            >
-              <Network aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="label" className="text-xs font-medium text-muted-foreground">
-            Label <span className="font-normal">(optional)</span>
-          </label>
-          <Input
-            id="label"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Cold storage"
-            maxLength={40}
-            className="h-10 md:w-44"
-          />
-        </div>
-        <div className="flex flex-col justify-end">
-          <Button type="submit" className="h-10 px-4">
-            <Plus aria-hidden="true" />
-            Add wallet
-          </Button>
-        </div>
+    <div className="flex flex-col gap-4">
+      <div className="flex gap-2">
+        <Select value={chain} onValueChange={setChain}>
+          <SelectTrigger className="flex-1">
+            <SelectValue placeholder={t.selectChain} />
+          </SelectTrigger>
+          <SelectContent>
+            {chains.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {error && (
-        <p id="address-error" role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+      <Input
+        type="text"
+        placeholder={t.enterAddress}
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+      />
+
+      <Input type="text" placeholder={t.walletLabel} value={label} onChange={(e) => setLabel(e.target.value)} />
+
+      <div className="flex gap-2">
+        <Button onClick={handleAdd} disabled={!address.trim() || !chain} className="flex-1">
+          <Plus className="size-4" />
+          {t.add}
+        </Button>
+        <Button onClick={() => setDialogOpen(true)} variant="outline">
+          {t.addCustomNetwork}
+        </Button>
+      </div>
+
+      {networks.filter((n) => n.id.startsWith('custom-')).length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground">Custom Networks:</p>
+          {networks
+            .filter((n) => n.id.startsWith('custom-'))
+            .map((n) => (
+              <div key={n.id} className="flex items-center justify-between gap-2 rounded border p-2">
+                <span className="text-xs">{n.name}</span>
+                <Button size="icon-xs" variant="ghost" onClick={() => onRemoveNetwork(n.id)}>
+                  <X className="size-3" />
+                </Button>
+              </div>
+            ))}
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {networks.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          >
-            + Add another blockchain network (Optimism, Avalanche, or any EVM RPC)
-          </button>
-        ) : (
-          <>
-            <span>Custom networks:</span>
-            {networks.map((n) => (
-              <span
-                key={n.id}
-                className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pr-0.5 pl-2 text-secondary-foreground"
-              >
-                {n.name}
-                <button
-                  type="button"
-                  onClick={() => onRemoveNetwork(n.id)}
-                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
-                  aria-label={`Remove ${n.name} network and its wallets`}
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))}
-            {networks.length < MAX_CUSTOM_NETWORKS && (
-              <button
-                type="button"
-                onClick={() => setDialogOpen(true)}
-                className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-              >
-                + Add network
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
-      <AddNetworkDialog open={dialogOpen} onOpenChange={setDialogOpen} takenIds={takenIds} onAdd={handleAddNetwork} />
-    </form>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.addCustomNetwork}</DialogTitle>
+            <DialogDescription>Add a custom blockchain network</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Input placeholder={t.networkName} value={networkName} onChange={(e) => setNetworkName(e.target.value)} />
+            <Input placeholder={t.rpcUrl} value={rpcUrl} onChange={(e) => setRpcUrl(e.target.value)} />
+            <div className="flex gap-2">
+              <Button onClick={handleAddNetwork} className="flex-1">
+                {t.add}
+              </Button>
+              <Button onClick={() => setDialogOpen(false)} variant="outline" className="flex-1">
+                {t.cancel}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
