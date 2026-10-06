@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Download, Link2, RefreshCw, Wallet as WalletIcon, Globe } from 'lucide-react'
+import { Download, Link2, RefreshCw, Wallet as WalletIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddWalletForm } from '@/components/add-wallet-form'
 import { WalletRow } from '@/components/wallet-row'
 import { formatUsd } from '@/lib/format'
+import { useT } from '@/lib/i18n'
 import {
   buildChainMap,
   encodeNetworks,
@@ -30,67 +31,8 @@ const SAMPLE_WALLETS: Wallet[] = [
 
 async function fetcher(url: string): Promise<BalancesResponse> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'La solicitud falló')
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Request failed')
   return res.json()
-}
-
-const T = {
-  es: {
-    addWallet: 'Agregar billetera',
-    trackedWallets: 'Billeteras rastreadas',
-    portfolioSummary: 'Resumen de cartera',
-    totalValue: 'Valor total',
-    walletsResolved: 'Billeteras resueltas',
-    lastUpdated: 'Última actualización',
-    maxWallets: 'Has alcanzado el máximo de',
-    noWallets: 'Sin billeteras aún',
-    pasteAddress: 'Pega una dirección arriba — la red se detecta automáticamente.',
-    shareLink: 'Compartir enlace',
-    copied: 'Copiado',
-    refresh: 'Actualizar',
-    export: 'Exportar',
-    exporting: 'Exportando…',
-    trySample: 'Probar billeteras de ejemplo',
-    autoRefresh: 'Auto-actualiza cada 60s',
-    pricePrefix: 'Precios:',
-    alerts: 'Alertas',
-    addAlert: 'Agregar alerta',
-    alertUsd: 'USD',
-    alertPercent: '%',
-    alertAbove: 'Sobre',
-    alertBelow: 'Bajo',
-    alertTriggered: 'Alerta activada',
-    noAlerts: 'Sin alertas configuradas',
-    deleteAlert: 'Eliminar alerta',
-  },
-  en: {
-    addWallet: 'Add a wallet',
-    trackedWallets: 'Tracked wallets',
-    portfolioSummary: 'Portfolio summary',
-    totalValue: 'Total value',
-    walletsResolved: 'Wallets resolved',
-    lastUpdated: 'Last updated',
-    maxWallets: "You're tracking the maximum of",
-    noWallets: 'No wallets yet',
-    pasteAddress: 'Paste an address above — the network is detected automatically.',
-    shareLink: 'Share link',
-    copied: 'Copied',
-    refresh: 'Refresh',
-    export: 'Export',
-    exporting: 'Exporting…',
-    trySample: 'Try sample wallets',
-    autoRefresh: 'Auto-refreshes every 60s',
-    pricePrefix: 'Prices:',
-    alerts: 'Alerts',
-    addAlert: 'Add alert',
-    alertUsd: 'USD',
-    alertPercent: '%',
-    alertAbove: 'Above',
-    alertBelow: 'Below',
-    alertTriggered: 'Alert triggered',
-    noAlerts: 'No alerts configured',
-    deleteAlert: 'Delete alert',
-  },
 }
 
 const LOCAL_STORAGE_KEYS = {
@@ -106,6 +48,8 @@ export function WalletTracker({
   initialWallets: Wallet[]
   initialNetworks: CustomNetwork[]
 }) {
+  const t = useT()
+
   const [wallets, setWallets] = useState<Wallet[]>(() => {
     if (initialWallets.length > 0) return initialWallets
     if (typeof window === 'undefined') return []
@@ -134,7 +78,6 @@ export function WalletTracker({
 
   const [linkCopied, setLinkCopied] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
-  const [locale, setLocale] = useState<'es' | 'en'>('es')
   const [alerts, setAlerts] = useState<Alert[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -144,7 +87,6 @@ export function WalletTracker({
     }
   })
 
-  const t = T[locale]
   const chains = useMemo(() => buildChainMap(networks), [networks])
   const encoded = encodeWallets(wallets)
   const encodedNetworks = encodeNetworks(networks)
@@ -259,7 +201,7 @@ export function WalletTracker({
         </h2>
         {wallets.length >= MAX_WALLETS ? (
           <p className="text-sm text-muted-foreground">
-            {t.maxWallets} {MAX_WALLETS} {locale === 'es' ? 'billeteras. Elimina una para agregar otra.' : 'wallets. Remove one to add another.'}
+            {t.maxWallets} {MAX_WALLETS} {t.maxWalletsSuffix}
           </p>
         ) : (
           <AddWalletForm
@@ -299,9 +241,6 @@ export function WalletTracker({
             <Button variant="secondary" size="sm" onClick={() => exportData()} disabled={!data || wallets.length === 0}>
               <Download aria-hidden="true" className={isExporting ? 'animate-spin' : undefined} />
               {isExporting ? t.exporting : t.export}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => setLocale((prev) => (prev === 'es' ? 'en' : 'es'))} aria-label="Cambiar idioma / Switch language" title={locale === 'es' ? 'English' : 'Español'}>
-              <Globe className="size-4" />
             </Button>
           </div>
         </div>

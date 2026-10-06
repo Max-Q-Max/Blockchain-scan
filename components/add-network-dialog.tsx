@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useT } from '@/lib/i18n'
 import { PRESET_NETWORKS, sanitizeNetwork, slugifyNetworkId, type CustomNetwork } from '@/lib/chains'
 
 type Props = {
@@ -24,6 +25,7 @@ type Props = {
 const EMPTY = { name: '', symbol: '', rpcUrl: '', explorerUrl: '', coingeckoId: '' }
 
 export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props) {
+  const t = useT()
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
@@ -46,7 +48,7 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
     e.preventDefault()
     const network = sanitizeNetwork({ ...form, id: slugifyNetworkId(form.name, takenIds) })
     if (!network) {
-      setError('Check the fields: name, symbol and a public https:// RPC URL are required. Explorer must also be https://.')
+      setError(t.networkError)
       return
     }
     setVerifying(true)
@@ -57,10 +59,10 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
         body: JSON.stringify({ rpcUrl: network.rpcUrl }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Verification failed')
+      if (!res.ok) throw new Error(data.error ?? t.verificationFailed)
       finish(network)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed')
+      setError(err instanceof Error ? err.message : t.verificationFailed)
     } finally {
       setVerifying(false)
     }
@@ -70,15 +72,13 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add a network</DialogTitle>
-          <DialogDescription>
-            Pick a popular EVM network or connect any EVM-compatible chain through its public JSON-RPC endpoint.
-          </DialogDescription>
+          <DialogTitle>{t.addNetworkTitle}</DialogTitle>
+          <DialogDescription>{t.addNetworkDesc}</DialogDescription>
         </DialogHeader>
 
         {presets.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-muted-foreground">Popular networks</p>
+            <p className="text-xs font-medium text-muted-foreground">{t.popularNetworks}</p>
             <div className="flex flex-wrap gap-2">
               {presets.map((p) => (
                 <Button key={p.id} type="button" variant="outline" size="sm" onClick={() => finish(p)}>
@@ -91,14 +91,28 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3 border-t pt-4" noValidate>
-          <p className="text-xs font-medium text-muted-foreground">Custom EVM network</p>
+          <p className="text-xs font-medium text-muted-foreground">{t.customEvmNetwork}</p>
           <div className="grid grid-cols-[1fr_7rem] gap-3">
-            <Field id="net-name" label="Network name" value={form.name} onChange={(v) => update('name', v)} placeholder="e.g. Mantle" maxLength={32} />
-            <Field id="net-symbol" label="Symbol" value={form.symbol} onChange={(v) => update('symbol', v)} placeholder="MNT" maxLength={10} />
+            <Field
+              id="net-name"
+              label={t.networkName}
+              value={form.name}
+              onChange={(v) => update('name', v)}
+              placeholder={t.networkNamePlaceholder}
+              maxLength={32}
+            />
+            <Field
+              id="net-symbol"
+              label={t.symbol}
+              value={form.symbol}
+              onChange={(v) => update('symbol', v)}
+              placeholder="MNT"
+              maxLength={10}
+            />
           </div>
           <Field
             id="net-rpc"
-            label="RPC URL"
+            label={t.rpcUrl}
             value={form.rpcUrl}
             onChange={(v) => update('rpcUrl', v)}
             placeholder="https://rpc.example.org"
@@ -106,7 +120,7 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
           />
           <Field
             id="net-explorer"
-            label="Block explorer URL"
+            label={t.blockExplorerUrl}
             optional
             value={form.explorerUrl}
             onChange={(v) => update('explorerUrl', v)}
@@ -115,11 +129,11 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
           />
           <Field
             id="net-cg"
-            label="CoinGecko ID for USD price"
+            label={t.coingeckoId}
             optional
             value={form.coingeckoId}
             onChange={(v) => update('coingeckoId', v)}
-            placeholder="e.g. mantle"
+            placeholder={t.coingeckoPlaceholder}
             mono
           />
 
@@ -131,11 +145,11 @@ export function AddNetworkDialog({ open, onOpenChange, takenIds, onAdd }: Props)
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" disabled={verifying}>
               {verifying ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}
-              {verifying ? 'Verifying RPC…' : 'Add network'}
+              {verifying ? t.verifyingRpc : t.addNetworkBtn}
             </Button>
           </DialogFooter>
         </form>

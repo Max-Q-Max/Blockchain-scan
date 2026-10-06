@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AddNetworkDialog } from '@/components/add-network-dialog'
+import { useT } from '@/lib/i18n'
 import { MAX_CUSTOM_NETWORKS, detectChain, isValidAddress, type ChainMap, type CustomNetwork, type Wallet } from '@/lib/chains'
 
 type Props = {
@@ -18,6 +19,7 @@ type Props = {
 }
 
 export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork, onRemoveNetwork }: Props) {
+  const t = useT()
   const [address, setAddress] = useState('')
   const [chainId, setChainId] = useState('eth')
   const [label, setLabel] = useState('')
@@ -40,11 +42,11 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
     const trimmed = address.trim()
     const chain = chains[selectedChainId]
     if (!isValidAddress(chain, trimmed)) {
-      setError(`That doesn't look like a valid ${chain.name} address.`)
+      setError(`${t.invalidAddress} ${chain.name}.`)
       return
     }
     if (existing.has(`${selectedChainId}:${trimmed}`)) {
-      setError('This wallet is already on your list.')
+      setError(t.duplicateWallet)
       return
     }
     onAdd({ chain: selectedChainId, address: trimmed, label: label.trim() || undefined })
@@ -62,13 +64,13 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
       <div className="flex flex-col gap-3 md:flex-row">
         <div className="flex flex-1 flex-col gap-1.5">
           <label htmlFor="address" className="text-xs font-medium text-muted-foreground">
-            Wallet address
+            {t.walletAddress}
           </label>
           <Input
             id="address"
             value={address}
             onChange={(e) => handleAddressChange(e.target.value)}
-            placeholder="0x…, bc1…, y… (Yerbas), or a Solana address"
+            placeholder={t.addressPlaceholder}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(error)}
@@ -78,7 +80,7 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="chain" className="text-xs font-medium text-muted-foreground">
-            Network
+            {t.network}
           </label>
           <div className="flex gap-1.5">
             <Select items={chainItems} value={selectedChainId} onValueChange={(v) => v && setChainId(v)}>
@@ -100,8 +102,8 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
               className="size-10 shrink-0"
               onClick={() => setDialogOpen(true)}
               disabled={networks.length >= MAX_CUSTOM_NETWORKS}
-              aria-label="Add a network"
-              title="Add a network"
+              aria-label={t.addANetwork}
+              title={t.addANetwork}
             >
               <Network aria-hidden="true" />
             </Button>
@@ -109,13 +111,13 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="label" className="text-xs font-medium text-muted-foreground">
-            Label <span className="font-normal">(optional)</span>
+            {t.label} <span className="font-normal">{t.optional}</span>
           </label>
           <Input
             id="label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Cold storage"
+            placeholder={t.labelPlaceholder}
             maxLength={40}
             className="h-10 md:w-44"
           />
@@ -123,7 +125,7 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
         <div className="flex flex-col justify-end">
           <Button type="submit" className="h-10 px-4">
             <Plus aria-hidden="true" />
-            Add wallet
+            {t.addWallet}
           </Button>
         </div>
       </div>
@@ -141,11 +143,11 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
             onClick={() => setDialogOpen(true)}
             className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
           >
-            + Add another blockchain network (Optimism, Avalanche, or any EVM RPC)
+            {t.addAnotherNetwork}
           </button>
         ) : (
           <>
-            <span>Custom networks:</span>
+            <span>{t.customNetworks}</span>
             {networks.map((n) => (
               <span
                 key={n.id}
@@ -156,7 +158,7 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
                   type="button"
                   onClick={() => onRemoveNetwork(n.id)}
                   className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
-                  aria-label={`Remove ${n.name} network and its wallets`}
+                  aria-label={t.removeNetworkAria(n.name)}
                 >
                   <X className="size-3" />
                 </button>
@@ -168,7 +170,7 @@ export function AddWalletForm({ chains, networks, existing, onAdd, onAddNetwork,
                 onClick={() => setDialogOpen(true)}
                 className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
               >
-                + Add network
+                {t.addNetwork}
               </button>
             )}
           </>
