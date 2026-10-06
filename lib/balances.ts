@@ -56,26 +56,29 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
     }
     case 'iquidus': {
       if (chain.id === 'rtm') {
-        const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}?json=true`)
+        // La API de Raptoreum devuelve TEXTO PLANO con el saldo en RTM (unidad completa).
+        // Ejemplo: "69.14299716". Ignora ?json=true y el header Accept.
+        const res = await fetch(
+          `${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`,
+          {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+            cache: 'no-store',
+            redirect: 'error',
+          },
+        )
+        if (!res.ok) throw new Error(`Explorer responded with ${res.status}`)
 
-        // Según la doc de Raptoreum: success viene como string 'true'
-        if (data?.success !== 'true' && data?.success !== true) {
-          throw new Error(data?.error ?? 'Address not found')
+        const text = (await res.text()).trim()
+
+        // Validamos que sea un número (entero o decimal, con signo opcional)
+        if (!/^-?\d+(\.\d+)?$/.test(text)) {
+          throw new Error(text.slice(0, 120) || 'Unexpected response from Raptoreum')
         }
 
-        // balanceRTM ya viene en RTM completo (unidad completa, no satoshis)
-        // balanceSatoshis es el fallback si por alguna razón no viene balanceRTM
-        const raw =
-          data.balanceRTM != null
-            ? parseUnits(String(data.balanceRTM), chain.decimals)
-            : data.balanceSatoshis != null
-              ? BigInt(String(data.balanceSatoshis))
-              : BigInt(0)
-
-        return { raw, txCount: null }
+        return { raw: parseUnits(text, chain.decimals), txCount: null }
       }
 
-      // Yerbas and other iquidus chains
+      // Yerbas y otras chains iquidus (siguen usando el endpoint JSON)
       const res = await fetch(`${chain.explorerApiUrl}/ext/getbalance/${encodeURIComponent(address)}`, {
         signal: AbortSignal.timeout(TIMEOUT_MS),
         cache: 'no-store',
@@ -147,15 +150,23 @@ export async function getBalances(
   chains: ChainMap = CHAIN_BY_ID,
 ): Promise<{ results: BalanceResult[]; prices: Record<string, number> }> {
   const walletChains = [...new Set(wallets.map((w) => chains[w.chain]))]
-  const explorerPriced = walletChains.filter((c) => c.kind === 'iquidus' && c.coingeckoId)
+
+  // RTM queda fuera del precio vía explorador porque /ext/getcurrentprice da 404.
+  // Yerbas y otras iquidus sí lo siguen usando.
+  const explorerPriced = walletChains.filter(
+    (c) => c.kind === 'iquidus' && c.id !== 'rtm' && c.coingeckoId,
+  )
+
+  // RTM se agrega al lote de CoinGecko (tiene coingeckoId: 'raptoreum').
   const priceIds = [
     ...new Set(
       walletChains
-        .filter((c) => c.kind !== 'iquidus')
+        .filter((c) => c.kind !== 'iquidus' || c.id === 'rtm')
         .map((c) => c.coingeckoId)
         .filter((id): id is string => !!id),
     ),
   ]
+
   const loadPrices = async () => {
     const [geckoPrices, explorerPrices] = await Promise.all([
       getPrices(priceIds),
@@ -164,6 +175,7 @@ export async function getBalances(
     for (const [key, price] of explorerPrices) if (price !== null) geckoPrices[key] = price
     return geckoPrices
   }
+
   const [prices, results] = await Promise.all([
     loadPrices(),
     Promise.all(
@@ -196,7 +208,6 @@ export async function getBalances(
     const price = id ? prices[id] : undefined
     r.usd = r.ok && price !== undefined ? Number(r.balance) * price : null
   }
-
 
   return { results, prices }
 }
