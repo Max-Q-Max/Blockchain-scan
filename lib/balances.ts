@@ -56,25 +56,23 @@ async function getRawBalance(chain: Chain, address: string): Promise<{ raw: bigi
     }
     case 'iquidus': {
       if (chain.id === 'rtm') {
-        const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}`)
-        
-        // Raptoreum API returns balance in satoshis (same as data.balance, not data.balanceRTM)
-        // Try multiple possible field names for robustness
-        const balanceValue =
-          data?.balance ??
-          data?.balanceRTM ??
-          data?.amount ??
-          data?.result?.balance ??
-          data?.result?.balanceRTM ??
-          data?.result?.amount ??
-          '0'
+        const data = await fetchJson(`${chain.explorerApiUrl}/api/getaddressbalance/${encodeURIComponent(address)}?json=true`)
 
-        if (data?.success === false && !balanceValue) {
+        // Según la doc de Raptoreum: success viene como string 'true'
+        if (data?.success !== 'true' && data?.success !== true) {
           throw new Error(data?.error ?? 'Address not found')
         }
 
-        // Balance is already in satoshis, convert to RTM using parseUnits
-        return { raw: parseUnits(String(balanceValue), chain.decimals), txCount: null }
+        // balanceRTM ya viene en RTM completo (unidad completa, no satoshis)
+        // balanceSatoshis es el fallback si por alguna razón no viene balanceRTM
+        const raw =
+          data.balanceRTM != null
+            ? parseUnits(String(data.balanceRTM), chain.decimals)
+            : data.balanceSatoshis != null
+              ? BigInt(String(data.balanceSatoshis))
+              : BigInt(0)
+
+        return { raw, txCount: null }
       }
 
       // Yerbas and other iquidus chains
@@ -198,6 +196,7 @@ export async function getBalances(
     const price = id ? prices[id] : undefined
     r.usd = r.ok && price !== undefined ? Number(r.balance) * price : null
   }
+
 
   return { results, prices }
 }
